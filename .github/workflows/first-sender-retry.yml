@@ -1,0 +1,16 @@
+name: First Sender Retry
+
+on:
+  schedule:
+    - cron: "15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger-first-sender-retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call first-sender-retry API
+        run: |
+          curl -sf -w "\nHTTP_STATUS:%{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://gmailm.autodesignlab.org/api/gmail/first-sender-retry"

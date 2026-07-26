@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/gmail/watch-renew",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/gmail/first-sender-retry",
-      "schedule": "15 * * * *"
-    }
-  ]
-}
+{}

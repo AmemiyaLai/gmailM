@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
 import { getSupabase } from "../lib/supabase";
 import { categoryBadge } from "../lib/categoryBadge";
 
@@ -23,16 +24,8 @@ const emails = (data ?? []) as EmailPreview[];
 ---
 
 <BaseLayout title="Gmail 即時監控面板">
-  <main class="container" style="padding: var(--space-8) 0;">
-    <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-8);">
-      <h1 style="font-size:var(--font-size-2xl);">Gmail 即時監控</h1>
-      <div style="display:flex; align-items:center; gap:var(--space-4);">
-        <a href="/search" class="btn btn-outline" style="padding:var(--space-2) var(--space-4);">搜尋</a>
-        <span id="connection-status" class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-tertiary);">
-          連線中...
-        </span>
-      </div>
-    </header>
+  <Header />
+  <main class="container" style="padding: var(--space-6) 0 var(--space-12) 0;">
 
     <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
       {emails.map((email) => {

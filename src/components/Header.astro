@@ -1,0 +1,174 @@
+---
+/**
+ * Header 元件
+ * 提供包含網頁左上角 Logo、品牌標題與頂部導航之共用導航列。
+ */
+export interface Props {
+  /** 是否顯示搜尋按鈕 */
+  showSearch?: boolean;
+}
+
+const { showSearch = true } = Astro.props;
+---
+
+<header class="site-header">
+  <div class="container header-content">
+    <!-- 左上角 品牌 Logo 區塊 -->
+    <a href="/" class="brand-link" title="回 Gmail Monitor 首頁">
+      <div class="logo-wrapper">
+        <img src="/logo.svg" alt="Gmail Monitor Logo" class="brand-logo" width="36" height="36" />
+        <span class="status-pulse"></span>
+      </div>
+      <div class="brand-info">
+        <span class="brand-name">Gmail<span class="brand-accent">Monitor</span></span>
+        <span class="brand-sub">即時監控系統</span>
+      </div>
+    </a>
+
+    <!-- 右側導航與連線狀態 -->
+    <nav class="header-nav">
+      {showSearch && (
+        <a href="/search" class="btn btn-outline nav-btn">
+          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>搜尋郵件</span>
+        </a>
+      )}
+      <span id="connection-status" class="badge connection-badge">
+        連線中...
+      </span>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--color-border-subtle);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: var(--space-3) 0;
+  }
+
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .brand-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    text-decoration: none;
+    transition: transform var(--transition-fast);
+  }
+
+  .brand-link:hover {
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+
+  .logo-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .brand-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+    object-fit: contain;
+    transition: box-shadow var(--transition-base);
+  }
+
+  .brand-link:hover .brand-logo {
+    box-shadow: 0 0 18px rgba(99, 102, 241, 0.6);
+  }
+
+  .status-pulse {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 8px;
+    height: 8px;
+    background-color: var(--color-success);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--color-success);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    }
+    70% {
+      transform: scale(1);
+      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+    }
+    100% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+  }
+
+  .brand-info {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+
+  .brand-name {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    letter-spacing: -0.02em;
+  }
+
+  .brand-accent {
+    color: var(--color-primary-hover);
+    margin-left: 2px;
+  }
+
+  .brand-sub {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    font-weight: var(--font-weight-regular);
+  }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--font-size-sm);
+  }
+
+  .search-icon {
+    opacity: 0.8;
+  }
+
+  .connection-badge {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-tertiary);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+</style>

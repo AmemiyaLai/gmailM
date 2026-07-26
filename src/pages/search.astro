@@ -1,0 +1,132 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import { getSupabase } from "../lib/supabase";
+import { categoryBadge } from "../lib/categoryBadge";
+import { categories } from "../lib/classify";
+
+interface EmailResult {
+  id: string;
+  sender: string;
+  subject: string;
+  snippet: string;
+  received_at: string;
+  is_read: boolean;
+  category: string | null;
+}
+
+const q = Astro.url.searchParams.get("q")?.trim() ?? "";
+const category = Astro.url.searchParams.get("category")?.trim() ?? "";
+const from = Astro.url.searchParams.get("from")?.trim() ?? "";
+const to = Astro.url.searchParams.get("to")?.trim() ?? "";
+
+const supabase = getSupabase();
+let query = supabase
+  .from("emails" as never)
+  .select("id, sender, subject, snippet, received_at, is_read, category")
+  .order("received_at", { ascending: false })
+  .limit(50);
+
+if (q) {
+  query = query.textSearch("search_vector", q, { type: "plain", config: "simple" });
+}
+if (category) {
+  query = query.eq("category", category);
+}
+if (from) {
+  query = query.gte("received_at", new Date(from).toISOString());
+}
+if (to) {
+  query = query.lte("received_at", new Date(to).toISOString());
+}
+
+const { data, error } = await query;
+const emails = (data ?? []) as EmailResult[];
+---
+
+<BaseLayout title="搜尋 — Gmail 即時監控面板">
+  <Header showSearch={false} />
+  <main class="container" style="padding: var(--space-6) 0 var(--space-12) 0;">
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">搜尋郵件</h1>
+
+    <form method="get" style="display:flex; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-8);">
+      <input
+        type="text"
+        name="q"
+        value={q}
+        placeholder="搜尋寄件者 / 主旨 / 內文摘要"
+        style="flex:1; min-width:200px; padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
+      />
+      <select
+        name="category"
+        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
+      >
+        <option value="">全部分類</option>
+        {categories.map((c) => (
+          <option value={c} selected={c === category}>{c}</option>
+        ))}
+      </select>
+      <input
+        type="date"
+        name="from"
+        value={from}
+        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
+      />
+      <input
+        type="date"
+        name="to"
+        value={to}
+        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
+      />
+      <button type="submit" class="btn btn-primary">搜尋</button>
+    </form>
+
+    {error && (
+      <div style="color:var(--color-error); margin-bottom:var(--space-4);">
+        查詢失敗：{error.message}
+      </div>
+    )}
+
+    <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+      {emails.map((email) => {
+        const badge = categoryBadge(email.category);
+        return (
+          <article class="card" style={`opacity: ${email.is_read ? 0.6 : 1};`}>
+            <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
+                  <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {email.sender}
+                  </strong>
+                  {badge && (
+                    <span class="badge" style={`background:${badge.bg}; color:${badge.color}; flex-shrink:0;`}>
+                      {badge.label}
+                    </span>
+                  )}
+                </div>
+                <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  {email.subject || "(無主旨)"}
+                </div>
+                <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  {email.snippet}
+                </div>
+              </div>
+              <time
+                datetime={email.received_at}
+                style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
+              >
+                {new Date(email.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
+              </time>
+            </div>
+          </article>
+        );
+      })}
+
+      {emails.length === 0 && !error && (
+        <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
+          沒有符合條件的郵件。
+        </div>
+      )}
+    </div>
+  </main>
+</BaseLayout>

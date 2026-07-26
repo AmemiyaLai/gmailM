@@ -119,6 +119,17 @@ export async function getMessage(
   };
 }
 
+export async function markAsRead(messageId: string): Promise<void> {
+  const gmail = getGmailClient();
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: {
+      removeLabelIds: ["UNREAD"],
+    },
+  });
+}
+
 export async function startWatch(): Promise<{
   historyId: string;
   expiration: string;

@@ -80,6 +80,7 @@ export const POST: APIRoute = async ({ request }) => {
   for (const { messageId } of messages) {
     try {
       const gmailMsg = await getMessage(messageId);
+      const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
 
       await supabase.from("emails" as never).upsert(
         {
@@ -94,6 +95,7 @@ export const POST: APIRoute = async ({ request }) => {
           labels: gmailMsg.labels,
           received_at: gmailMsg.receivedAt.toISOString(),
           is_read: gmailMsg.isRead,
+          category,
         } as never,
         { onConflict: "id" },
       );
@@ -105,6 +107,7 @@ export const POST: APIRoute = async ({ request }) => {
         subject: gmailMsg.subject,
         snippet: gmailMsg.snippet,
         received_at: gmailMsg.receivedAt.toISOString(),
+        category,
       });
     } catch (err) {
       console.error(`Failed to process message ${messageId}:`, err);

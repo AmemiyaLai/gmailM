@@ -1,0 +1,135 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import { buildEmailAnalytics, parseAnalyticsRange } from "../lib/emailAnalytics";
+import { getAnalyticsEmails } from "../lib/emailQueries";
+import { formatEmailDate } from "../lib/formatEmailDate";
+import { extractSenderName } from "../lib/senderUtils";
+
+const range = parseAnalyticsRange(Astro.url);
+const emails = await getAnalyticsEmails(range);
+const analytics = buildEmailAnalytics(emails, range);
+const chartData = JSON.stringify({
+  trend: analytics.trend,
+  hours: analytics.hours,
+  weekdays: analytics.weekdays,
+  categories: analytics.categories,
+  senders: analytics.senders.slice(0, 10),
+  keywords: analytics.keywords,
+}).replace(/</g, "\\u003c");
+const rangeLabel = range.preset === "all" ? "所有已同步郵件" : `${range.from} 至 ${range.to}`;
+---
+
+<SidebarLayout title="郵件分析 — Gmail 即時監控面板" activeView="analytics">
+  <div class="analytics-heading">
+    <div>
+      <h1>郵件分析</h1>
+      <p>以台北時間統計 · {rangeLabel}</p>
+    </div>
+    <form class="analytics-filter" method="get">
+      <label>
+        <span class="sr-only">時間範圍</span>
+        <select name="range" aria-label="時間範圍">
+          <option value="all" selected={range.preset === "all"}>全期間</option>
+          <option value="7d" selected={range.preset === "7d"}>最近 7 天</option>
+          <option value="30d" selected={range.preset === "30d"}>最近 30 天</option>
+          <option value="90d" selected={range.preset === "90d"}>最近 90 天</option>
+          <option value="custom" selected={range.preset === "custom"}>自訂區間</option>
+        </select>
+      </label>
+      <label><span class="sr-only">開始日期</span><input type="date" name="from" value={range.from ?? ""} /></label>
+      <label><span class="sr-only">結束日期</span><input type="date" name="to" value={range.to ?? ""} /></label>
+      <button class="btn btn-outline" type="submit">套用</button>
+    </form>
+  </div>
+
+  {analytics.summary.total === 0 ? (
+    <div class="analytics-empty">此期間尚無已同步郵件，請調整時間範圍或先同步 Gmail。</div>
+  ) : (
+    <>
+      <section class="metric-grid" aria-label="核心統計">
+        <article class="metric-card"><span>郵件總數</span><strong>{analytics.summary.total.toLocaleString()}</strong></article>
+        <article class="metric-card"><span>每日平均</span><strong>{analytics.summary.dailyAverage.toFixed(1)}</strong></article>
+        <article class="metric-card"><span>未讀比例</span><strong>{(analytics.summary.unreadRate * 100).toFixed(1)}%</strong><small>{analytics.summary.unread.toLocaleString()} 封未讀</small></article>
+        <article class="metric-card"><span>重要郵件</span><strong>{analytics.summary.important.toLocaleString()}</strong></article>
+      </section>
+
+      <section class="chart-grid chart-grid--primary">
+        <article class="analytics-card analytics-card--wide"><h2>郵件發送頻率</h2><p>{analytics.trend.bucket === "day" ? "每日" : "每月"}郵件量；點擊資料點可查看對應郵件</p><canvas id="frequency-chart" aria-label="郵件發送頻率折線圖"></canvas></article>
+        <article class="analytics-card"><h2>內容分類</h2><p>既有郵件分類的占比；點擊扇區可篩選</p><canvas id="category-chart" aria-label="郵件分類圓餅圖"></canvas></article>
+      </section>
+
+      <section class="chart-grid">
+        <article class="analytics-card"><h2>一天中的來信時段</h2><p>24 小時分佈</p><canvas id="hour-chart" aria-label="每小時郵件量柱狀圖"></canvas></article>
+        <article class="analytics-card"><h2>每週來信分佈</h2><p>依星期幾統計</p><canvas id="weekday-chart" aria-label="每週郵件量柱狀圖"></canvas></article>
+      </section>
+
+      <section class="chart-grid chart-grid--primary">
+        <article class="analytics-card analytics-card--wide"><h2>主要寄件者</h2><p>前 10 名寄件者；點擊柱狀資料可查看郵件</p><canvas id="sender-chart" aria-label="主要寄件者柱狀圖"></canvas></article>
+        <article class="analytics-card"><h2>常見關鍵詞</h2><p>取自主旨、摘要與純文字內文</p><canvas id="keyword-chart" aria-label="關鍵詞分佈柱狀圖"></canvas></article>
+      </section>
+
+      <section class="analytics-card sender-table-card">
+        <div><h2>所有寄件者</h2><p>日均以選取期間的曆日數計算</p></div>
+        <div class="table-scroll"><table><thead><tr><th>寄件者</th><th>郵件數</th><th>日均</th><th>最後來信</th></tr></thead><tbody>
+          {analytics.senders.map((sender) => (
+            <tr><td><a href={`/emails?sender=${encodeURIComponent(sender.sender)}${range.from ? `&from=${range.from}&to=${range.to}` : ""}`}>{extractSenderName(sender.sender)}</a></td><td>{sender.count.toLocaleString()}</td><td>{sender.dailyAverage.toFixed(2)}</td><td>{formatEmailDate(sender.latestReceivedAt)}</td></tr>
+          ))}
+        </tbody></table></div>
+      </section>
+    </>
+  )}
+
+  <script id="analytics-chart-data" type="application/json" set:html={chartData}></script>
+  <script>
+    import { Chart, ArcElement, BarElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip } from "chart.js";
+    Chart.register(ArcElement, BarElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip);
+
+    const payload = JSON.parse(document.getElementById("analytics-chart-data")?.textContent ?? "{}");
+    const css = getComputedStyle(document.documentElement);
+    const primary = css.getPropertyValue("--color-primary").trim() || "#6366f1";
+    const accent = css.getPropertyValue("--color-primary-hover").trim() || "#818cf8";
+    const text = css.getPropertyValue("--color-text-secondary").trim() || "#a1a1aa";
+    const grid = css.getPropertyValue("--color-border-subtle").trim() || "#27272a";
+    const palette = [primary, "#22c55e", "#f59e0b", "#3b82f6", "#ec4899", "#a78bfa", "#14b8a6"];
+    const query = (params: Record<string, string>) => { const p = new URLSearchParams(params); window.location.href = `/emails?${p}`; };
+    const range = new URLSearchParams(window.location.search);
+    const withRange = (params: Record<string, string>) => { const from = range.get("from"); const to = range.get("to"); if (from && to) { params.from = from; params.to = to; } return params; };
+    const common = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: text } }, tooltip: { enabled: true } }, scales: { x: { ticks: { color: text }, grid: { color: grid } }, y: { beginAtZero: true, ticks: { color: text, precision: 0 }, grid: { color: grid } } } };
+    const chart = (id: string, config: any) => { const el = document.getElementById(id) as HTMLCanvasElement | null; return el ? new Chart(el, config) : null; };
+
+    chart("frequency-chart", { type: "line", data: { labels: payload.trend?.items.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.trend?.items.map((x: any) => x.count), borderColor: accent, backgroundColor: "rgba(99,102,241,.18)", fill: true, tension: .28 }] }, options: { ...common, onClick: (_: any, points: any[]) => { const item = payload.trend?.items[points[0]?.index]; if (!item) return; const [y, m] = item.label.split("-"); const month = payload.trend.bucket === "month"; const to = month ? new Date(Date.UTC(Number(y), Number(m), 0)).toISOString().slice(0, 10) : item.label; query({ from: month ? `${item.label}-01` : item.label, to }); } } });
+    chart("category-chart", { type: "doughnut", data: { labels: payload.categories?.map((x: any) => x.label), datasets: [{ data: payload.categories?.map((x: any) => x.count), backgroundColor: palette }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: text } } }, onClick: (_: any, points: any[]) => { const item = payload.categories?.[points[0]?.index]; if (item) query(withRange({ category: item.label })); } } });
+    chart("hour-chart", { type: "bar", data: { labels: payload.hours?.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.hours?.map((x: any) => x.count), backgroundColor: primary }] }, options: common });
+    chart("weekday-chart", { type: "bar", data: { labels: payload.weekdays?.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.weekdays?.map((x: any) => x.count), backgroundColor: "#22c55e" }] }, options: common });
+    chart("sender-chart", { type: "bar", data: { labels: payload.senders?.map((x: any) => x.sender), datasets: [{ label: "郵件數", data: payload.senders?.map((x: any) => x.count), backgroundColor: accent }] }, options: { ...common, indexAxis: "y", onClick: (_: any, points: any[]) => { const item = payload.senders?.[points[0]?.index]; if (item) query(withRange({ sender: item.sender })); } } });
+    chart("keyword-chart", { type: "bar", data: { labels: payload.keywords?.map((x: any) => x.label), datasets: [{ label: "出現次數", data: payload.keywords?.map((x: any) => x.count), backgroundColor: "#f59e0b" }] }, options: { ...common, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { enabled: true } } } });
+  </script>
+</SidebarLayout>
+
+<style>
+  .analytics-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:var(--space-4); margin-bottom:var(--space-6); }
+  .analytics-heading h1 { font-size:var(--font-size-2xl); margin-bottom:var(--space-1); }
+  .analytics-heading p, .analytics-card p { color:var(--color-text-tertiary); font-size:var(--font-size-sm); }
+  .analytics-filter { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--space-2); }
+  .analytics-filter select, .analytics-filter input { min-height:36px; border:1px solid var(--color-border); border-radius:var(--radius-md); padding:var(--space-1) var(--space-2); color:var(--color-text); background:var(--color-surface); }
+  .metric-grid, .chart-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--space-4); margin-bottom:var(--space-4); }
+  .metric-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+  .metric-card, .analytics-card, .analytics-empty { background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); padding:var(--space-5); }
+  .metric-card { display:flex; flex-direction:column; gap:var(--space-1); }
+  .metric-card span, .metric-card small { color:var(--color-text-tertiary); font-size:var(--font-size-sm); }
+  .metric-card strong { font-size:var(--font-size-2xl); }
+  .analytics-card { min-height:330px; }
+  .analytics-card h2 { font-size:var(--font-size-lg); margin-bottom:var(--space-1); }
+  .analytics-card canvas { height:250px !important; max-width:100%; margin-top:var(--space-4); }
+  .chart-grid--primary { grid-template-columns:minmax(0, 2fr) minmax(280px, 1fr); }
+  .sender-table-card { min-height:0; margin-bottom:var(--space-4); }
+  .table-scroll { overflow-x:auto; margin-top:var(--space-4); }
+  table { width:100%; border-collapse:collapse; min-width:620px; font-size:var(--font-size-sm); }
+  th, td { padding:var(--space-3); text-align:left; border-bottom:1px solid var(--color-border-subtle); }
+  th { color:var(--color-text-secondary); font-weight:var(--font-weight-medium); }
+  td:not(:first-child) { text-align:right; }
+  td a { color:var(--color-primary-hover); }
+  .analytics-empty { color:var(--color-text-tertiary); text-align:center; padding:var(--space-16); }
+  @media (max-width: 900px) { .metric-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } .analytics-heading { flex-direction:column; } .analytics-filter { justify-content:flex-start; } }
+  @media (max-width: 640px) { .chart-grid, .metric-grid { grid-template-columns:1fr; } .analytics-filter { width:100%; } .analytics-filter select, .analytics-filter input { flex:1; min-width:120px; } }
+</style>

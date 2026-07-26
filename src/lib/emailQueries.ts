@@ -1,5 +1,8 @@
 import { getSupabase } from "./supabase";
 import { categories } from "./classify";
+import type { SenderGroup } from "./senderGroups";
+import type { AnalyticsEmail, AnalyticsRange } from "./emailAnalytics";
+import { rangeToQueryBounds } from "./emailAnalytics";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -17,6 +20,7 @@ export interface EmailPreview {
   category: string | null;
   is_important?: boolean;
   is_starred: boolean;
+  is_first_sender: boolean;
 }
 
 export interface SummaryRow {
@@ -26,6 +30,28 @@ export interface SummaryRow {
   period_start: string;
   period_end: string;
   created_at: string;
+}
+
+export interface FirstSenderEventRow {
+  sender_address: string;
+  first_email_id: string;
+  sender_display: string;
+  first_received_at: string;
+  source: "baseline" | "live";
+  notification_status: "baseline" | "pending" | "failed" | "sent";
+  notification_attempts: number;
+  last_notification_error: string | null;
+  notified_at: string | null;
+}
+
+export async function getFirstSenderEvents(limit = 100): Promise<FirstSenderEventRow[]> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("first_sender_events" as never)
+    .select("sender_address, first_email_id, sender_display, first_received_at, source, notification_status, notification_attempts, last_notification_error, notified_at")
+    .order("first_received_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as FirstSenderEventRow[];
 }
 
 interface EmailPreviewRow {
@@ -38,13 +64,14 @@ interface EmailPreviewRow {
   category: string | null;
   is_important?: boolean;
   labels: string[] | null;
+  is_first_sender?: boolean;
 }
 
-const PREVIEW_COLUMNS = "id, sender, subject, snippet, received_at, is_read, category, is_important, labels";
+const PREVIEW_COLUMNS = "id, sender, subject, snippet, received_at, is_read, category, is_important, is_first_sender, labels";
 
 function toEmailPreview(row: EmailPreviewRow): EmailPreview {
   const { labels, ...rest } = row;
-  return { ...rest, is_starred: (labels ?? []).includes("STARRED") };
+  return { ...rest, is_first_sender: rest.is_first_sender ?? false, is_starred: (labels ?? []).includes("STARRED") };
 }
 
 function toEmailPreviews(rows: EmailPreviewRow[]): EmailPreview[] {
@@ -229,4 +256,192 @@ export async function getSenderStats(minCount = 2): Promise<SenderStat[]> {
 
   stats.sort((a, b) => b.count - a.count);
   return stats;
+}
+
+/**
+ * 取得每個寄信者群組的未讀郵件數量。
+ * "others" 群組以「總未讀 - 已匹配」差集計算。
+ */
+export async function getSenderGroupUnreadCounts(
+  groups: SenderGroup[]
+): Promise<Record<string, number>> {
+  const supabase = getSupabase();
+
+  // 取得所有未讀郵件的 sender 清單（不需要完整資料）
+  const { data } = await supabase
+    .from("emails" as never)
+    .select("sender")
+    .eq("is_read", false);
+
+  const senders: string[] = ((data ?? []) as { sender: string }[]).map(
+    (r) => r.sender
+  );
+
+  const counts: Record<string, number> = {};
+  let matchedCount = 0;
+
+  for (const group of groups) {
+    if (group.id === "others") continue;
+
+    const count = senders.filter((sender) => {
+      const lower = sender.toLowerCase();
+      return group.patterns.some((p) => lower.includes(p));
+    }).length;
+
+    counts[group.id] = count;
+    matchedCount += count;
+  }
+
+  // "others" = 全部未讀 - 已被其他群組匹配的郵件
+  counts["others"] = Math.max(0, senders.length - matchedCount);
+
+  return counts;
+}
+
+/**
+ * 依群組 patterns 篩選未讀郵件，回傳郵件清單。
+ * groupId 為 "others" 時，返回不匹配任何已知 group pattern 的未讀郵件。
+ */
+export async function listEmailsByGroup(
+  groups: SenderGroup[],
+  groupId: string,
+  opts: { limit?: number; offset?: number } = {}
+): Promise<ListEmailsResult> {
+  const { limit = 50, offset = 0 } = opts;
+  const supabase = getSupabase();
+
+  const group = groups.find((g) => g.id === groupId);
+
+  if (groupId !== "others" && group && group.patterns.length > 0) {
+    // 正常群組：取出所有未讀郵件，在記憶體中過濾（Supabase JS SDK 不支援 OR ilike）
+    const { data } = await supabase
+      .from("emails" as never)
+      .select(PREVIEW_COLUMNS)
+      .eq("is_read", false)
+      .order("received_at", { ascending: false })
+      .range(0, offset + limit + 500); // 多取一些以便過濾後仍有足夠資料
+
+    const allRows = toEmailPreviews((data ?? []) as EmailPreviewRow[]);
+    const filtered = allRows.filter((email) => {
+      const lower = email.sender.toLowerCase();
+      return group.patterns.some((p) => lower.includes(p));
+    });
+
+    const paged = filtered.slice(offset, offset + limit);
+    return { emails: paged, hasMore: filtered.length > offset + limit };
+  }
+
+  if (groupId === "others") {
+    // 「其他」群組：排除所有已匹配群組的 pattern
+    const knownGroups = groups.filter((g) => g.id !== "others");
+    const { data } = await supabase
+      .from("emails" as never)
+      .select(PREVIEW_COLUMNS)
+      .eq("is_read", false)
+      .order("received_at", { ascending: false })
+      .range(0, offset + limit + 500);
+
+    const allRows = toEmailPreviews((data ?? []) as EmailPreviewRow[]);
+    const filtered = allRows.filter((email) => {
+      const lower = email.sender.toLowerCase();
+      return !knownGroups.some((g) =>
+        g.patterns.some((p) => lower.includes(p))
+      );
+    });
+
+    const paged = filtered.slice(offset, offset + limit);
+    return { emails: paged, hasMore: filtered.length > offset + limit };
+  }
+
+  return { emails: [], hasMore: false };
+}
+
+export interface TopSender {
+  sender: string;
+  count: number;
+}
+
+/**
+ * 取得每個寄信者群組中，未讀郵件最多的前 N 名寄件者。
+ * 一次查詢全部未讀 sender，在記憶體中分組計算，避免 N+1 查詢。
+ */
+export async function getSenderGroupTopSenders(
+  groups: SenderGroup[],
+  topN = 3
+): Promise<Record<string, TopSender[]>> {
+  const supabase = getSupabase();
+
+  const { data } = await supabase
+    .from("emails" as never)
+    .select("sender")
+    .eq("is_read", false);
+
+  const rows = (data ?? []) as { sender: string }[];
+
+  // 計算每個 sender 的出現次數
+  const senderCountMap = new Map<string, number>();
+  for (const row of rows) {
+    senderCountMap.set(row.sender, (senderCountMap.get(row.sender) ?? 0) + 1);
+  }
+
+  const knownGroups = groups.filter((g) => g.id !== "others");
+  const result: Record<string, TopSender[]> = {};
+
+  for (const group of groups) {
+    if (group.id === "others") {
+      // 「其他」群組：所有不匹配任何 pattern 的 sender
+      const otherEntries = Array.from(senderCountMap.entries()).filter(
+        ([sender]) => {
+          const lower = sender.toLowerCase();
+          return !knownGroups.some((g) =>
+            g.patterns.some((p) => lower.includes(p))
+          );
+        }
+      );
+      otherEntries.sort((a, b) => b[1] - a[1]);
+      result["others"] = otherEntries
+        .slice(0, topN)
+        .map(([sender, count]) => ({ sender, count }));
+      continue;
+    }
+
+    const matched = Array.from(senderCountMap.entries()).filter(
+      ([sender]) => {
+        const lower = sender.toLowerCase();
+        return group.patterns.some((p) => lower.includes(p));
+      }
+    );
+    matched.sort((a, b) => b[1] - a[1]);
+    result[group.id] = matched
+      .slice(0, topN)
+      .map(([sender, count]) => ({ sender, count }));
+  }
+
+  return result;
+}
+
+/**
+ * 依分析期間取回所有郵件。Supabase 單次回傳上限為 1,000 筆，故採分頁讀取。
+ * 僅讀取統計與關鍵詞分析需要的欄位，正文不會傳到瀏覽器。
+ */
+export async function getAnalyticsEmails(range: AnalyticsRange): Promise<AnalyticsEmail[]> {
+  const supabase = getSupabase();
+  const pageSize = 1000;
+  const all: AnalyticsEmail[] = [];
+  const bounds = rangeToQueryBounds(range);
+
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase
+      .from("emails" as never)
+      .select("sender, received_at, category, is_read, is_important, subject, snippet, body_plain")
+      .order("received_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (bounds.from) query = query.gte("received_at", bounds.from);
+    if (bounds.to) query = query.lt("received_at", bounds.to);
+    const { data } = await query;
+    const rows = (data ?? []) as AnalyticsEmail[];
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
 }

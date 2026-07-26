@@ -4,6 +4,7 @@ import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
 import SummaryPanel from "../components/SummaryPanel.astro";
 import StatsRow from "../components/StatsRow.astro";
+import SenderGroupGrid from "../components/SenderGroupGrid.astro";
 import {
   getLatestSummary,
   getUnreadCount,
@@ -11,12 +12,15 @@ import {
   getCategoryCounts,
   getImportantEmails,
   listEmails,
+  getSenderGroupUnreadCounts,
+  getSenderGroupTopSenders,
 } from "../lib/emailQueries";
 import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
+import { SENDER_GROUPS } from "../lib/senderGroups";
 
 const filters = parseEmailFilterParams(Astro.url);
 
-const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emails: recentUnread }] =
+const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emails: recentUnread }, groupUnreadCounts, groupTopSenders] =
   await Promise.all([
     getLatestSummary(),
     getUnreadCount(),
@@ -32,11 +36,21 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
       onlyUnread: true,
       limit: 10,
     }),
+    getSenderGroupUnreadCounts(SENDER_GROUPS),
+    getSenderGroupTopSenders(SENDER_GROUPS, 3),
   ]);
 ---
 
 <SidebarLayout title="Gmail 即時監控面板" activeView="home">
-  <SummaryPanel summary={summary} />
+  <!-- 摘要區：左 50% AI 摘要 / 右 50% 寄信者群組卡片 -->
+  <div class="summary-split">
+    <div class="summary-split-left">
+      <SummaryPanel summary={summary} />
+    </div>
+    <div class="summary-split-right">
+      <SenderGroupGrid groups={SENDER_GROUPS} unreadCounts={groupUnreadCounts} topSenders={groupTopSenders} />
+    </div>
+  </div>
 
   <StatsRow
     unreadCount={unreadCount}
@@ -74,6 +88,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
         category={email.category}
         isImportant={email.is_important}
         isStarred={email.is_starred}
+        isFirstSender={email.is_first_sender}
         compact
       />
     ))}
@@ -127,6 +142,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
         category?: string;
         is_important?: boolean;
         is_starred?: boolean;
+        is_first_sender?: boolean;
       }) => {
         listEl.prepend(buildEmailRowElement(data));
       },

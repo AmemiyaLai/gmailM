@@ -27,7 +27,7 @@ const { groups, unreadCounts, topSenders } = Astro.props;
       >
         {/* 標題列：圖示 + 群組名稱 + 未讀數量 */}
         <div class="sgcard-top">
-          <span class="sgcard-icon" style={`color: var(${group.colorVar});`}>
+          <span class="material-symbols-rounded sgcard-icon" aria-hidden="true" style={`color: var(${group.colorVar});`}>
             {group.icon}
           </span>
           <div class="sgcard-info">
@@ -90,7 +90,8 @@ const { groups, unreadCounts, topSenders } = Astro.props;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: repeat(3, 1fr);
     gap: var(--space-3);
-    height: 100%;
+    flex: 1;
+    min-height: 0;
   }
 
   /* 每張卡片 */
@@ -179,9 +180,7 @@ const { groups, unreadCounts, topSenders } = Astro.props;
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1);
-    margin-top: auto;      /* 把按鈕推到卡片底部 */
-    padding-top: var(--space-1);
-    border-top: 1px solid var(--color-border-subtle);
+    margin-top: var(--space-2);
   }
 
   .sgcard-sender-btn {

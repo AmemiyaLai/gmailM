@@ -2,12 +2,14 @@
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import StatCard from "../components/StatCard.astro";
 import { getSenderStats } from "../lib/emailQueries";
-import { categoryBadge } from "../lib/categoryBadge";
-import { categories } from "../lib/classify";
 import { formatEmailDate } from "../lib/formatEmailDate";
 import { extractSenderName } from "../lib/senderUtils";
+import { getSenderTags } from "../lib/senderTagService";
+import { senderKey, SENDER_TAGS, senderTagLabels } from "../lib/senderTags";
+import { getSupabase } from "../lib/supabase";
 
 const stats = await getSenderStats(2);
+const senderTags = await getSenderTags(getSupabase());
 ---
 
 <SidebarLayout title="常見寄件者 — Gmail 即時監控面板" activeView="senders">
@@ -15,6 +17,11 @@ const stats = await getSenderStats(2);
 
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:var(--space-4); margin-bottom:var(--space-8);">
     <StatCard label="常見寄件者數" value={stats.length} accent="primary" />
+  </div>
+
+  <div style="margin:-1rem 0 var(--space-4); display:flex; align-items:center; gap:var(--space-3);">
+    <button type="button" class="btn btn-outline" id="refresh-sender-tags">自動整理標籤</button>
+    <span id="refresh-sender-tags-status" style="font-size:var(--font-size-sm); color:var(--color-text-tertiary);"></span>
   </div>
 
   {stats.length === 0 ? (
@@ -29,15 +36,13 @@ const stats = await getSenderStats(2);
             <th style="padding:var(--space-3) var(--space-4); text-align:left; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">寄件者</th>
             <th style="padding:var(--space-3) var(--space-4); text-align:right; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">次數</th>
             <th style="padding:var(--space-3) var(--space-4); text-align:left; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">最新來信</th>
-            <th style="padding:var(--space-3) var(--space-4); text-align:left; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">目前分類</th>
+            <th style="padding:var(--space-3) var(--space-4); text-align:left; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">寄件者標籤</th>
             <th style="padding:var(--space-3) var(--space-4); text-align:left; font-weight:var(--font-weight-medium); color:var(--color-text-secondary);">操作</th>
           </tr>
         </thead>
         <tbody>
           {stats.map((stat) => {
-            const uniqueCategories = [...new Set(stat.categories)];
-            const badge = uniqueCategories.length === 1 ? categoryBadge(uniqueCategories[0]) : null;
-            const isMixed = uniqueCategories.length > 1;
+            const tagInfo = senderTags.get(senderKey(stat.sender));
             return (
               <tr class="sender-row" data-sender={stat.sender} style="border-bottom:1px solid var(--color-border-subtle);">
                 <td style="padding:var(--space-3) var(--space-4);">
@@ -52,19 +57,19 @@ const stats = await getSenderStats(2);
                   {formatEmailDate(stat.latestReceivedAt)}
                 </td>
                 <td style="padding:var(--space-3) var(--space-4);">
-                  {isMixed ? (
-                    <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-secondary);">混合</span>
-                  ) : badge ? (
-                    <span class="badge" style={`background:${badge.bg}; color:${badge.color};`}>{badge.label}</span>
+                  {tagInfo ? (
+                    <span class="badge" style="background:var(--color-primary-muted); color:var(--color-primary-hover);">
+                      {senderTagLabels[tagInfo.tag]}{tagInfo.source === "manual" ? "（手動）" : tagInfo.was_aggregated ? "（已聚合）" : ""}
+                    </span>
                   ) : (
-                    <span style="color:var(--color-text-tertiary);">—</span>
+                    <span style="color:var(--color-text-tertiary);">尚未整理</span>
                   )}
                 </td>
                 <td style="padding:var(--space-3) var(--space-4);">
                   <div style="display:flex; align-items:center; gap:var(--space-2);">
-                    <select class="sender-category-select" style="padding:var(--space-1) var(--space-2); border:1px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); font-size:var(--font-size-xs);">
-                      {categories.map((c) => (
-                        <option value={c}>{c}</option>
+                    <select class="sender-tag-select" style="padding:var(--space-1) var(--space-2); border:1px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-surface); color:var(--color-text); font-size:var(--font-size-xs);">
+                      {SENDER_TAGS.map((tag) => (
+                        <option value={tag} selected={tag === tagInfo?.tag}>{senderTagLabels[tag]}</option>
                       ))}
                     </select>
                     <button type="button" class="btn btn-outline sender-apply-btn" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);">套用</button>
@@ -81,17 +86,17 @@ const stats = await getSenderStats(2);
   <script>
     document.querySelectorAll<HTMLTableRowElement>(".sender-row").forEach((row) => {
       const btn = row.querySelector<HTMLButtonElement>(".sender-apply-btn");
-      const select = row.querySelector<HTMLSelectElement>(".sender-category-select");
+      const select = row.querySelector<HTMLSelectElement>(".sender-tag-select");
       if (!btn || !select) return;
 
       const sender = row.dataset.sender!;
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         try {
-          const res = await fetch("/api/senders/category", {
+          const res = await fetch("/api/senders/tag", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender, category: select.value }),
+            body: JSON.stringify({ sender, tag: select.value }),
           });
           if (!res.ok) throw new Error("Failed");
           btn.textContent = "已套用";
@@ -103,6 +108,22 @@ const stats = await getSenderStats(2);
           btn.disabled = false;
         }
       });
+    });
+
+    const refresh = document.querySelector<HTMLButtonElement>("#refresh-sender-tags");
+    const status = document.querySelector<HTMLElement>("#refresh-sender-tags-status");
+    refresh?.addEventListener("click", async () => {
+      refresh.disabled = true;
+      if (status) status.textContent = "整理中…";
+      try {
+        const res = await fetch("/api/senders/tags/refresh", { method: "POST" });
+        const result = await res.json() as { processed?: number; aggregated?: number };
+        if (!res.ok) throw new Error("Failed");
+        if (status) status.textContent = `已整理 ${result.processed ?? 0} 位寄件者，聚合 ${result.aggregated ?? 0} 個標籤。`;
+        window.setTimeout(() => window.location.reload(), 600);
+      } catch {
+        if (status) status.textContent = "整理失敗，請稍後再試。";
+      } finally { refresh.disabled = false; }
     });
   </script>
 </SidebarLayout>

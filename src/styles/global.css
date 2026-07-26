@@ -162,6 +162,25 @@ body {
   transition: background-color var(--transition-base), color var(--transition-base);
 }
 
+/* Google Material Symbols Rounded，所有介面 icon 統一使用同一套字型。 */
+.material-symbols-rounded {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.25rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "liga";
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
 img,
 video,
 svg {
@@ -431,7 +450,7 @@ pre code {
 .summary-split {
   display: flex;
   gap: var(--space-4);
-  align-items: stretch;
+  align-items: stretch;      /* 讓兩欄等高 */
   margin-bottom: var(--space-6);
 }
 
@@ -449,10 +468,21 @@ pre code {
   flex-direction: column;
 }
 
-/* 讓左半邊的 SummaryPanel card 撐滿高度 */
+/*
+ * 左欄的直接子 .card（SummaryPanel）：
+ * - flex:1 讓它在左欄 flex-column 裡填滿空間
+ * - margin-bottom:0 覆蓋 inline style 無效，所以改在 SummaryPanel.astro 裡移除 inline margin
+ */
 .summary-split-left > .card {
   flex: 1;
   margin-bottom: 0;
+}
+
+/* 右欄：SenderGroupGrid 的 sgrid 有 height:100%，
+   需確保右欄 div 也 stretch 滿高度 */
+.summary-split-right > * {
+  flex: 1;
+  min-height: 0;
 }
 
 /* RWD：平板以下垂直堆疊 */
@@ -465,5 +495,8 @@ pre code {
     flex: none;
     width: 100%;
   }
+  /* RWD 時 sgrid 不需要固定高度 */
+  .summary-split-right > * {
+    flex: none;
+  }
 }
-

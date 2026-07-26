@@ -37,7 +37,7 @@ export default defineConfig({
   // 所有測試共用的基礎設定
   use: {
     // 基礎 URL（對應 Astro 開發伺服器）
-    baseURL: "http://localhost:4321",
+    baseURL: "http://localhost:1008",
 
     // 失敗時自動截圖
     screenshot: "only-on-failure",
@@ -77,7 +77,7 @@ export default defineConfig({
   // 執行測試前自動啟動開發伺服器
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:4321",
+    url: "http://localhost:1008",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

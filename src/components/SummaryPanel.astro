@@ -3,12 +3,14 @@ import type { SummaryRow } from "../lib/emailQueries";
 
 export interface Props {
   summary: SummaryRow | null;
+  /** 允許父層注入額外 class，例如 "summary-fill" 讓卡片撐滿高度 */
+  class?: string;
 }
 
-const { summary } = Astro.props;
+const { summary, class: className } = Astro.props;
 ---
 
-<div class="card" style="margin-bottom:var(--space-6);">
+<div class:list={["card", "summary-panel-card", className]}>
   <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-4); margin-bottom:var(--space-3);">
     <h2 style="font-size:var(--font-size-lg); display:flex; align-items:center; gap:var(--space-2);">
       📬 AI 摘要
@@ -28,7 +30,7 @@ const { summary } = Astro.props;
           涵蓋期間：{new Date(summary.period_start).toLocaleString("zh-TW")} ～ {new Date(summary.period_end).toLocaleString("zh-TW")}
         </span>
       </div>
-      <p style="white-space:pre-line; font-size:var(--font-size-sm); color:var(--color-text);">
+      <p style="white-space:pre-line; font-size:var(--font-size-sm); color:var(--color-text); overflow-y:auto; flex:1;">
         {summary.summary_text}
       </p>
     </>
@@ -38,3 +40,12 @@ const { summary } = Astro.props;
     </p>
   )}
 </div>
+
+<style>
+  /* 在 index 的 summary-split 中，此卡片需要撐滿整個左欄高度 */
+  .summary-panel-card {
+    display: flex;
+    flex-direction: column;
+    /* margin 由父層 .summary-split-left > .card 的 CSS 控制，此處不設 */
+  }
+</style>

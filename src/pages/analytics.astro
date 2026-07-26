@@ -81,8 +81,8 @@ const rangeLabel = range.preset === "all" ? "所有已同步郵件" : `${range.f
 
   <script id="analytics-chart-data" type="application/json" set:html={chartData}></script>
   <script>
-    import { Chart, ArcElement, BarElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip } from "chart.js";
-    Chart.register(ArcElement, BarElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip);
+    // 使用 auto 入口一次註冊各圖表控制器與元素；否則第一張折線圖會因未註冊 line controller 而中斷所有圖表初始化。
+    import Chart from "chart.js/auto";
 
     const payload = JSON.parse(document.getElementById("analytics-chart-data")?.textContent ?? "{}");
     const css = getComputedStyle(document.documentElement);
@@ -91,18 +91,27 @@ const rangeLabel = range.preset === "all" ? "所有已同步郵件" : `${range.f
     const text = css.getPropertyValue("--color-text-secondary").trim() || "#a1a1aa";
     const grid = css.getPropertyValue("--color-border-subtle").trim() || "#27272a";
     const palette = [primary, "#22c55e", "#f59e0b", "#3b82f6", "#ec4899", "#a78bfa", "#14b8a6"];
+    const senderLabel = (sender: string) => {
+      const match = sender.match(/^\s*(.+?)\s*<[^>]+>\s*$/);
+      if (match) return match[1].replace(/^["']|["']$/g, "");
+      return sender.split("@")[0];
+    };
     const query = (params: Record<string, string>) => { const p = new URLSearchParams(params); window.location.href = `/emails?${p}`; };
     const range = new URLSearchParams(window.location.search);
     const withRange = (params: Record<string, string>) => { const from = range.get("from"); const to = range.get("to"); if (from && to) { params.from = from; params.to = to; } return params; };
     const common = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: text } }, tooltip: { enabled: true } }, scales: { x: { ticks: { color: text }, grid: { color: grid } }, y: { beginAtZero: true, ticks: { color: text, precision: 0 }, grid: { color: grid } } } };
+    const horizontalScales = {
+      x: { beginAtZero: true, ticks: { color: text, precision: 0 }, grid: { color: grid } },
+      y: { ticks: { color: text }, grid: { color: grid } },
+    };
     const chart = (id: string, config: any) => { const el = document.getElementById(id) as HTMLCanvasElement | null; return el ? new Chart(el, config) : null; };
 
     chart("frequency-chart", { type: "line", data: { labels: payload.trend?.items.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.trend?.items.map((x: any) => x.count), borderColor: accent, backgroundColor: "rgba(99,102,241,.18)", fill: true, tension: .28 }] }, options: { ...common, onClick: (_: any, points: any[]) => { const item = payload.trend?.items[points[0]?.index]; if (!item) return; const [y, m] = item.label.split("-"); const month = payload.trend.bucket === "month"; const to = month ? new Date(Date.UTC(Number(y), Number(m), 0)).toISOString().slice(0, 10) : item.label; query({ from: month ? `${item.label}-01` : item.label, to }); } } });
     chart("category-chart", { type: "doughnut", data: { labels: payload.categories?.map((x: any) => x.label), datasets: [{ data: payload.categories?.map((x: any) => x.count), backgroundColor: palette }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: text } } }, onClick: (_: any, points: any[]) => { const item = payload.categories?.[points[0]?.index]; if (item) query(withRange({ category: item.label })); } } });
     chart("hour-chart", { type: "bar", data: { labels: payload.hours?.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.hours?.map((x: any) => x.count), backgroundColor: primary }] }, options: common });
     chart("weekday-chart", { type: "bar", data: { labels: payload.weekdays?.map((x: any) => x.label), datasets: [{ label: "郵件數", data: payload.weekdays?.map((x: any) => x.count), backgroundColor: "#22c55e" }] }, options: common });
-    chart("sender-chart", { type: "bar", data: { labels: payload.senders?.map((x: any) => x.sender), datasets: [{ label: "郵件數", data: payload.senders?.map((x: any) => x.count), backgroundColor: accent }] }, options: { ...common, indexAxis: "y", onClick: (_: any, points: any[]) => { const item = payload.senders?.[points[0]?.index]; if (item) query(withRange({ sender: item.sender })); } } });
-    chart("keyword-chart", { type: "bar", data: { labels: payload.keywords?.map((x: any) => x.label), datasets: [{ label: "出現次數", data: payload.keywords?.map((x: any) => x.count), backgroundColor: "#f59e0b" }] }, options: { ...common, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { enabled: true } } } });
+    chart("sender-chart", { type: "bar", data: { labels: payload.senders?.map((x: any) => senderLabel(x.sender)), datasets: [{ label: "郵件數", data: payload.senders?.map((x: any) => x.count), backgroundColor: accent }] }, options: { ...common, indexAxis: "y", scales: horizontalScales, onClick: (_: any, points: any[]) => { const item = payload.senders?.[points[0]?.index]; if (item) query(withRange({ sender: item.sender })); } } });
+    chart("keyword-chart", { type: "bar", data: { labels: payload.keywords?.map((x: any) => x.label), datasets: [{ label: "出現次數", data: payload.keywords?.map((x: any) => x.count), backgroundColor: "#f59e0b" }] }, options: { ...common, indexAxis: "y", scales: horizontalScales, plugins: { legend: { display: false }, tooltip: { enabled: true } } } });
   </script>
 </SidebarLayout>
 

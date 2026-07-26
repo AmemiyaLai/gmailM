@@ -43,3 +43,22 @@ test.describe("無障礙基礎檢查", () => {
     }
   });
 });
+
+test.describe("郵件分析頁", () => {
+  test("應提供分析頁與時間範圍控制", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/analytics?range=30d");
+    await expect(page).toHaveTitle(/郵件分析/);
+    await expect(page.getByRole("heading", { name: "郵件分析" })).toBeVisible();
+    await expect(page.locator('select[name="range"]')).toHaveValue("30d");
+    await expect(page.getByRole("link", { name: "郵件分析" })).toBeVisible();
+    const painted = await page.locator("canvas").evaluateAll((canvases) => canvases.map((node) => {
+      const canvas = node as HTMLCanvasElement;
+      const context = canvas.getContext("2d");
+      return !!context && [...context.getImageData(0, 0, canvas.width, canvas.height).data].some((value, index) => index % 4 === 3 && value > 0);
+    }));
+    expect(painted).toEqual(expect.arrayContaining([true]));
+    expect(errors).toEqual([]);
+  });
+});

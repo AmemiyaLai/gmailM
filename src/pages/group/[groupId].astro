@@ -49,7 +49,7 @@ for (const email of emails) {
   }
 }
 
-const pageTitle = `${group.icon} ${group.label} — 未讀郵件`;
+const pageTitle = `${group.label} — 未讀郵件`;
 
 function buildPageHref(p: number): string {
   return p > 1 ? `/group/${groupId}?page=${p}` : `/group/${groupId}`;
@@ -61,11 +61,11 @@ function buildPageHref(p: number): string {
   <div class="group-breadcrumb">
     <a href="/" class="breadcrumb-link">首頁</a>
     <span class="breadcrumb-sep">›</span>
-    <span class="breadcrumb-current">{group.icon} {group.label}</span>
+    <span class="breadcrumb-current"><span class="material-symbols-rounded" aria-hidden="true">{group.icon}</span> {group.label}</span>
   </div>
 
   <h1 class="group-heading">
-    <span class="group-icon" style={`color: var(${group.colorVar});`}>{group.icon}</span>
+    <span class="material-symbols-rounded group-icon" aria-hidden="true" style={`color: var(${group.colorVar});`}>{group.icon}</span>
     {group.label}
     <span class="group-unread-hint">未讀郵件</span>
   </h1>

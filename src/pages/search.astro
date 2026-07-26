@@ -3,7 +3,7 @@ import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
 import { getSupabase } from "../lib/supabase";
-import { parseEmailFilterParams } from "../lib/emailFilters";
+import { endOfTaipeiDate, parseEmailFilterParams, startOfTaipeiDate } from "../lib/emailFilters";
 
 interface EmailResult {
   id: string;
@@ -33,10 +33,10 @@ if (filters.category) {
   query = query.eq("category", filters.category);
 }
 if (filters.from) {
-  query = query.gte("received_at", new Date(filters.from).toISOString());
+  query = query.gte("received_at", startOfTaipeiDate(filters.from));
 }
 if (filters.to) {
-  query = query.lte("received_at", new Date(filters.to).toISOString());
+  query = query.lte("received_at", endOfTaipeiDate(filters.to));
 }
 if (filters.sender) {
   query = query.ilike("sender", `%${filters.sender}%`);

@@ -10,6 +10,7 @@ export interface NewEmailData {
   category?: string | null;
   is_important?: boolean;
   is_starred?: boolean;
+  is_first_sender?: boolean;
 }
 
 export function renderEmailRowHtml(data: NewEmailData): string {
@@ -32,6 +33,7 @@ export function renderEmailRowHtml(data: NewEmailData): string {
       <span class="email-subject">${data.subject || "(無主旨)"}</span>
       <span class="email-snippet">— ${data.snippet}</span>
       ${badge ? `<span class="badge chip" style="background:${badge.bg}; color:${badge.color};">${badge.label}</span>` : ""}
+      ${data.is_first_sender ? '<span class="badge chip" style="background:rgba(249,115,22,.15); color:#c2410c;">首次寄件者</span>' : ""}
     </a>
 
     <div class="email-meta">

@@ -2,6 +2,8 @@ import { getSupabase } from "./supabase";
 import { getPusher } from "./pusher";
 import { listMessages, getMessage } from "./gmail";
 import { classifyEmail } from "./classify";
+import { normalizeSenderAddress } from "./senderAddress";
+import { registerFirstSender } from "./firstSender";
 
 export interface SyncResult {
   imported: number;
@@ -21,12 +23,14 @@ export async function syncEmailsFromGmail(limit: number): Promise<SyncResult> {
     try {
       const gmailMsg = await getMessage(messageId);
       const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
+      const senderAddress = normalizeSenderAddress(gmailMsg.sender);
 
       const { error } = await supabase.from("emails" as never).upsert(
         {
           id: gmailMsg.id,
           thread_id: gmailMsg.threadId,
           sender: gmailMsg.sender,
+          sender_address: senderAddress,
           recipient: gmailMsg.recipient,
           subject: gmailMsg.subject,
           snippet: gmailMsg.snippet,
@@ -41,6 +45,23 @@ export async function syncEmailsFromGmail(limit: number): Promise<SyncResult> {
       );
 
       if (error) throw error;
+
+      // 回填只建立基線，避免對歷史寄件者產生大量 Discord 訊息。
+      if (senderAddress) {
+        const firstEvent = await registerFirstSender(supabase, {
+          sender_address: senderAddress,
+          first_email_id: gmailMsg.id,
+          sender_display: gmailMsg.sender,
+          first_received_at: gmailMsg.receivedAt.toISOString(),
+          source: "baseline",
+        });
+        if (firstEvent) {
+          const { error: firstFlagError } = await supabase.from("emails" as never)
+            .update({ is_first_sender: true } as never)
+            .eq("id", gmailMsg.id);
+          if (firstFlagError) throw firstFlagError;
+        }
+      }
       imported++;
     } catch (err) {
       console.error(`Failed to sync message ${messageId}:`, err);

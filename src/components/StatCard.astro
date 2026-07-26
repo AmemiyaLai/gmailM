@@ -1,0 +1,40 @@
+---
+export interface Props {
+  label: string;
+  value: string | number;
+  href?: string;
+  accent?: "primary" | "warning" | "info";
+}
+
+const { label, value, href, accent = "primary" } = Astro.props;
+
+const accentColor =
+  accent === "warning" ? "var(--color-warning)" : accent === "info" ? "var(--color-info)" : "var(--color-primary)";
+
+const Tag = href ? "a" : "div";
+---
+
+<Tag href={href} class="card stat-card" style={`--accent:${accentColor}; ${href ? "text-decoration:none; color:inherit;" : ""}`}>
+  <div class="stat-value">{value}</div>
+  <div class="stat-label">{label}</div>
+</Tag>
+
+<style>
+  .stat-card {
+    padding: var(--space-4);
+    border-top: 3px solid var(--accent, var(--color-primary));
+  }
+
+  .stat-value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    line-height: var(--line-height-tight);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-1);
+  }
+</style>

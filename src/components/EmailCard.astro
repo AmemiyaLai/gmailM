@@ -1,0 +1,75 @@
+---
+import { categoryBadge } from "../lib/categoryBadge";
+
+export interface Props {
+  id: string;
+  sender: string;
+  subject: string;
+  snippet: string;
+  receivedAt: string;
+  isRead: boolean;
+  category: string | null;
+  isImportant?: boolean;
+  compact?: boolean;
+}
+
+const {
+  id,
+  sender,
+  subject,
+  snippet,
+  receivedAt,
+  isRead,
+  category,
+  isImportant = false,
+  compact = false,
+} = Astro.props;
+
+const badge = categoryBadge(category);
+---
+
+<a
+  href={`/emails/${id}`}
+  class="card email-card"
+  data-id={id}
+  data-read={isRead ? "true" : "false"}
+  style={`opacity:${isRead ? 0.6 : 1}; display:block; text-decoration:none; color:inherit; ${
+    isImportant ? "border-left:3px solid var(--color-error);" : ""
+  } ${compact ? "padding:var(--space-4);" : ""}`}
+>
+  <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
+    <div style="min-width:0; flex:1;">
+      <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
+        <span
+          class="unread-dot"
+          style={`width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0; visibility:${
+            isRead ? "hidden" : "visible"
+          };`}
+        ></span>
+        <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          {sender}
+        </strong>
+        {badge && (
+          <span class="badge" style={`background:${badge.bg}; color:${badge.color}; flex-shrink:0;`}>
+            {badge.label}
+          </span>
+        )}
+        {isImportant && <span title="重要郵件" style="flex-shrink:0;">⭐</span>}
+      </div>
+      <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        {subject || "(無主旨)"}
+      </div>
+      {!compact && (
+        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+          {snippet}
+        </div>
+      )}
+    </div>
+    <time
+      datetime={receivedAt}
+      style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
+    >
+      {new Date(receivedAt).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
+    </time>
+  </div>
+</a>

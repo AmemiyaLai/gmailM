@@ -12,6 +12,28 @@ function isValidUrl(url: string | undefined): boolean {
   }
 }
 
+function createMockQueryBuilder(): unknown {
+  const listResult = { data: [], error: null, count: 0 };
+  const singleResult = { data: null, error: null };
+
+  const proxy: unknown = new Proxy(
+    () => {},
+    {
+      get(_target, prop) {
+        if (prop === "then") {
+          return (resolve: (value: unknown) => void) => resolve(listResult);
+        }
+        if (prop === "single" || prop === "maybeSingle") {
+          return () => Promise.resolve(singleResult);
+        }
+        return () => proxy;
+      },
+    },
+  );
+
+  return proxy;
+}
+
 export function getSupabase() {
   if (!client) {
     const url = import.meta.env.SUPABASE_URL;
@@ -20,19 +42,7 @@ export function getSupabase() {
       console.warn("Supabase 未配置或使用預設佔位符，開發預覽啟用虛擬數據防禦。");
       // 回傳 Mock Supabase Client 物件避免 SSR 致命崩潰
       return {
-        from: () => ({
-          select: () => ({
-            order: () => ({
-              limit: async () => ({ data: [], error: null }),
-            }),
-            eq: () => ({
-              limit: async () => ({ data: [], error: null }),
-            }),
-            textSearch: () => ({
-              limit: async () => ({ data: [], error: null }),
-            }),
-          }),
-        }),
+        from: () => createMockQueryBuilder(),
       } as unknown as ReturnType<typeof createClient>;
     }
     client = createClient(url, key);

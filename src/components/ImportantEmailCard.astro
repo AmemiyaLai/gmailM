@@ -1,0 +1,24 @@
+---
+import EmailCard from "./EmailCard.astro";
+import type { EmailPreview } from "../lib/emailQueries";
+
+export interface Props {
+  email: EmailPreview;
+}
+
+const { email } = Astro.props;
+---
+
+<div style="min-width:260px; flex-shrink:0;">
+  <EmailCard
+    id={email.id}
+    sender={email.sender}
+    subject={email.subject}
+    snippet={email.snippet}
+    receivedAt={email.received_at}
+    isRead={email.is_read}
+    category={email.category}
+    isImportant={true}
+    compact
+  />
+</div>

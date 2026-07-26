@@ -1,0 +1,40 @@
+---
+import type { SummaryRow } from "../lib/emailQueries";
+
+export interface Props {
+  summary: SummaryRow | null;
+}
+
+const { summary } = Astro.props;
+---
+
+<div class="card" style="margin-bottom:var(--space-6);">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-4); margin-bottom:var(--space-3);">
+    <h2 style="font-size:var(--font-size-lg); display:flex; align-items:center; gap:var(--space-2);">
+      📬 AI 摘要
+    </h2>
+    <a href="/summaries" style="font-size:var(--font-size-sm); color:var(--color-primary-hover);">
+      查看歷史摘要 →
+    </a>
+  </div>
+
+  {summary ? (
+    <>
+      <div style="display:flex; align-items:center; gap:var(--space-3); margin-bottom:var(--space-2);">
+        <span class="badge" style="background:var(--color-primary-muted); color:var(--color-primary-hover);">
+          {summary.email_count} 封未讀
+        </span>
+        <span style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+          涵蓋期間：{new Date(summary.period_start).toLocaleString("zh-TW")} ～ {new Date(summary.period_end).toLocaleString("zh-TW")}
+        </span>
+      </div>
+      <p style="white-space:pre-line; font-size:var(--font-size-sm); color:var(--color-text);">
+        {summary.summary_text}
+      </p>
+    </>
+  ) : (
+    <p style="color:var(--color-text-tertiary); font-size:var(--font-size-sm);">
+      尚無摘要記錄，等待下一次每小時排程執行。
+    </p>
+  )}
+</div>

@@ -1,0 +1,40 @@
+---
+import { categoryBadge } from "../lib/categoryBadge";
+
+export interface Props {
+  category: string;
+  count: number;
+}
+
+const { category, count } = Astro.props;
+const badge = categoryBadge(category);
+---
+
+<a
+  href={`/emails?category=${encodeURIComponent(category)}`}
+  class="card stat-card"
+  style={`--accent:${badge?.bg ?? "var(--color-border)"}; text-decoration:none; color:inherit;`}
+>
+  <div class="stat-value">{count}</div>
+  <div class="stat-label">{badge?.label ?? category}</div>
+</a>
+
+<style>
+  .stat-card {
+    padding: var(--space-4);
+    border-top: 3px solid var(--accent, var(--color-primary));
+  }
+
+  .stat-value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    line-height: var(--line-height-tight);
+  }
+
+  .stat-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-1);
+  }
+</style>

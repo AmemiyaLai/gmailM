@@ -22,6 +22,12 @@ describe("categoryBadge()", () => {
     expect(badge!.label).toBe("系統通知");
   });
 
+  it("應回傳 uncategorized 的 badge 資訊", () => {
+    const badge = categoryBadge("uncategorized");
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe("未分類");
+  });
+
   it("應對未知類別回傳 null", () => {
     expect(categoryBadge("unknown")).toBeNull();
   });

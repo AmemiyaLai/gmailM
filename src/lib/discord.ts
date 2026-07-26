@@ -31,6 +31,7 @@ export async function sendDiscordNotification(
   if (!webhookUrl) return;
 
   const badge = categoryBadge(email.category);
+  const siteUrl = import.meta.env.SITE_URL;
 
   await fetch(webhookUrl, {
     method: "POST",
@@ -47,8 +48,49 @@ export async function sendDiscordNotification(
             { name: "分類", value: badge?.label ?? "未分類", inline: true },
             { name: "緊急狀況", value: urgencyLabel(email.labels), inline: true },
             { name: "摘要", value: email.snippet || "(無內容)" },
+            ...(siteUrl ? [{ name: "管理頁面", value: `[前往查看](${siteUrl})` }] : []),
           ],
           timestamp: email.receivedAt.toISOString(),
+        },
+      ],
+    }),
+  });
+}
+
+export interface EmailSummaryPayload {
+  summaryText: string;
+  emailCount: number;
+  periodStart: Date;
+  periodEnd: Date;
+}
+
+const SUMMARY_COLOR = 0x57f287; // green — 與重要通知的紅色區隔
+
+export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<void> {
+  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  const siteUrl = import.meta.env.SITE_URL;
+
+  await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [
+        {
+          title: "📬 每小時未讀郵件摘要",
+          description: summary.summaryText,
+          url: siteUrl || undefined,
+          color: SUMMARY_COLOR,
+          fields: [
+            { name: "未讀郵件數", value: String(summary.emailCount), inline: true },
+            {
+              name: "涵蓋期間",
+              value: `${summary.periodStart.toLocaleString("zh-TW")} ～ ${summary.periodEnd.toLocaleString("zh-TW")}`,
+              inline: true,
+            },
+          ],
+          timestamp: new Date().toISOString(),
         },
       ],
     }),

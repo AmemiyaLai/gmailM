@@ -1,0 +1,51 @@
+---
+import StatCard from "./StatCard.astro";
+import CategoryCard from "./CategoryCard.astro";
+import ImportantEmailCard from "./ImportantEmailCard.astro";
+import type { EmailPreview } from "../lib/emailQueries";
+
+export interface Props {
+  unreadCount: number;
+  todayCount: number;
+  categoryCounts: { category: string; count: number }[];
+  importantEmails: EmailPreview[];
+}
+
+const { unreadCount, todayCount, categoryCounts, importantEmails } = Astro.props;
+---
+
+<div style="margin-bottom:var(--space-8);">
+  <div class="stats-grid">
+    <StatCard label="未讀郵件" value={unreadCount} href="/unread" accent="primary" />
+    <StatCard label="今日郵件" value={todayCount} accent="info" />
+    {categoryCounts.map(({ category, count }) => (
+      <CategoryCard category={category} count={count} />
+    ))}
+  </div>
+
+  {importantEmails.length > 0 && (
+    <div style="margin-top:var(--space-6);">
+      <h2 style="font-size:var(--font-size-md); margin-bottom:var(--space-3);">⭐ 重要郵件</h2>
+      <div class="important-row">
+        {importantEmails.map((email) => (
+          <ImportantEmailCard email={email} />
+        ))}
+      </div>
+    </div>
+  )}
+</div>
+
+<style>
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .important-row {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+  }
+</style>

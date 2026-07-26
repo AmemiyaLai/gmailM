@@ -8,6 +8,8 @@ const requiredRoutes = [
   "src/pages/api/gmail/watch-renew.ts",
   "src/pages/api/emails/[id]/read.ts",
   "src/pages/emails/[id].astro",
+  "src/pages/emails/index.astro",
+  "src/pages/unread.astro",
 ];
 
 const missing = requiredRoutes.filter((file) => !existsSync(file));

@@ -5,6 +5,7 @@ import { getPusher } from "../../../lib/pusher";
 import { listHistory, getMessage } from "../../../lib/gmail";
 import { classifyEmail } from "../../../lib/classify";
 import { sendDiscordNotification } from "../../../lib/discord";
+import { judgeEmailImportance } from "../../../lib/gemini";
 
 interface SyncStateRow {
   watch_address: string;
@@ -83,6 +84,20 @@ export const POST: APIRoute = async ({ request }) => {
       const gmailMsg = await getMessage(messageId);
       const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
 
+      let important = gmailMsg.labels.includes("IMPORTANT"); // Gemini 失敗時的 fallback
+      let importanceReason: string | undefined;
+      try {
+        const judged = await judgeEmailImportance({
+          sender: gmailMsg.sender,
+          subject: gmailMsg.subject,
+          snippet: gmailMsg.snippet,
+        });
+        important = judged.important;
+        importanceReason = judged.reason;
+      } catch (err) {
+        console.error(`Gemini importance judge failed for ${messageId}, falling back to IMPORTANT label:`, err);
+      }
+
       await supabase.from("emails" as never).upsert(
         {
           id: gmailMsg.id,
@@ -97,6 +112,8 @@ export const POST: APIRoute = async ({ request }) => {
           received_at: gmailMsg.receivedAt.toISOString(),
           is_read: gmailMsg.isRead,
           category,
+          is_important: important,
+          importance_reason: importanceReason ?? null,
         } as never,
         { onConflict: "id" },
       );
@@ -109,9 +126,10 @@ export const POST: APIRoute = async ({ request }) => {
         snippet: gmailMsg.snippet,
         received_at: gmailMsg.receivedAt.toISOString(),
         category,
+        is_important: important,
       });
 
-      if (gmailMsg.labels.includes("IMPORTANT")) {
+      if (important) {
         await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
           console.error(`Failed to send Discord notification for ${messageId}:`, err),
         );

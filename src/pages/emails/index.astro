@@ -66,30 +66,45 @@ for (const email of emails) {
 
   <div id="email-list" data-unread-only={filters.unread ? "true" : "false"} style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
     {groups.map((group, i) => (
-      <details class="sender-group" open={i === 0} data-sender={group.sender}>
-        <summary class="sender-group-header">
-          <span class="sender-group-toggle"></span>
-          <input type="checkbox" class="group-select-all" aria-label={`全選 ${group.sender}`} />
-          <span class="sender-group-name">{extractSenderName(group.sender)}</span>
-          <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-secondary);">{group.emails.length} 封</span>
-        </summary>
-        <div class="sender-group-body">
-          {group.emails.map((email) => (
-            <EmailCard
-              id={email.id}
-              sender={email.sender}
-              subject={email.subject}
-              snippet={email.snippet}
-              receivedAt={email.received_at}
-              isRead={email.is_read}
-              category={email.category}
-              isImportant={email.is_important}
-              isStarred={email.is_starred}
-              isFirstSender={email.is_first_sender}
-            />
-          ))}
-        </div>
-      </details>
+      group.emails.length === 1 ? (
+        <EmailCard
+          id={group.emails[0].id}
+          sender={group.emails[0].sender}
+          subject={group.emails[0].subject}
+          snippet={group.emails[0].snippet}
+          receivedAt={group.emails[0].received_at}
+          isRead={group.emails[0].is_read}
+          category={group.emails[0].category}
+          isImportant={group.emails[0].is_important}
+          isStarred={group.emails[0].is_starred}
+          isFirstSender={group.emails[0].is_first_sender}
+        />
+      ) : (
+        <details class="sender-group" open={i === 0} data-sender={group.sender}>
+          <summary class="sender-group-header">
+            <span class="sender-group-toggle"></span>
+            <input type="checkbox" class="group-select-all" aria-label={`全選 ${group.sender}`} />
+            <span class="sender-group-name">{extractSenderName(group.sender)}</span>
+            <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-secondary);">{group.emails.length} 封</span>
+          </summary>
+          <div class="sender-group-body">
+            {group.emails.map((email) => (
+              <EmailCard
+                id={email.id}
+                sender={email.sender}
+                subject={email.subject}
+                snippet={email.snippet}
+                receivedAt={email.received_at}
+                isRead={email.is_read}
+                category={email.category}
+                isImportant={email.is_important}
+                isStarred={email.is_starred}
+                isFirstSender={email.is_first_sender}
+              />
+            ))}
+          </div>
+        </details>
+      )
     ))}
 
     {emails.length === 0 && (

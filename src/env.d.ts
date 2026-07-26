@@ -18,6 +18,9 @@ interface ImportMetaEnv {
   readonly PUBSUB_AUDIENCE: string;
   readonly CRON_SECRET: string;
   readonly DISCORD_WEBHOOK_URL: string;
+  readonly GEMINI_API_KEY: string;
+  readonly GEMINI_MODEL?: string;
+  readonly SITE_URL?: string;
 }
 
 interface ImportMeta {

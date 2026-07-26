@@ -19,18 +19,29 @@ export interface UnreadEmailInput {
   receivedAt: Date;
 }
 
+function formatTaipeiDateTime(date: Date): string {
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 export async function summarizeUnreadEmails(emails: UnreadEmailInput[]): Promise<string> {
   const list = emails
     .map(
       (e, i) =>
-        `${i + 1}. [${e.category ?? "未分類"}] 寄件者：${e.sender}｜主旨：${e.subject || "(無主旨)"}｜摘要：${e.snippet || "(無)"}｜時間：${e.receivedAt.toISOString()}`,
+        `${i + 1}. [${formatTaipeiDateTime(e.receivedAt)}][${e.category ?? "未分類"}] 寄件者：${e.sender}｜主旨：${e.subject || "(無主旨)"}｜摘要：${e.snippet || "(無)"}`,
     )
     .join("\n");
 
-  const prompt = `你是一位郵件助理，以下是使用者目前尚未讀取的 ${emails.length} 封郵件清單：
+  const prompt = `你是一位郵件助理，以下是使用者目前尚未讀取的 ${emails.length} 封郵件清單（每筆開頭 [MM/DD HH:mm] 是收件日期時間，時區為台北時間）：
 ${list}
 
-請用繁體中文條列出重點摘要（依重要性/主題分組即可），控制在 300 字以內，語氣精簡、適合放進 Discord 通知訊息。不要加入 markdown 標題語法，只需條列文字。`;
+請用繁體中文條列出重點摘要（依重要性/主題分組即可），**每一點摘要的最前面都必須標註該封信對應的收件日期與時間，格式為「[MM/DD HH:mm]」**，讓使用者能一眼判斷該事項的緊急程度。控制在 300 字以內，語氣精簡、適合放進 Discord 通知訊息。不要加入 markdown 標題語法，只需條列文字。`;
 
   const res = await getClient().models.generateContent({
     model: MODEL,

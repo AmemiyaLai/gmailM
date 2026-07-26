@@ -1,0 +1,61 @@
+# ===== Astro 建置輸出 =====
+dist/
+.astro/
+
+# ===== 依賴套件 =====
+node_modules/
+
+# ===== 日誌 =====
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== 環境變數（絕對不提交實際的 .env 檔案！） =====
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.staging
+# .env.example 可以提交（僅含範本，不含真實值）
+
+# ===== 部署平台輸出 =====
+.vercel/
+.netlify/
+.output/
+.wrangler/
+
+# ===== 作業系統暫存 =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== 編輯器設定 =====
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ===== 測試產出物 =====
+# Playwright
+playwright-report/
+test-results/
+playwright/.cache/
+
+# Vitest
+coverage/
+
+# ===== 私鑰與憑證（雙重保護，全域 .gitignore_global 也有配置） =====
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+service-account*.json
+*-credentials.json

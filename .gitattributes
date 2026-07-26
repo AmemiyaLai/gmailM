@@ -1,0 +1,53 @@
+# =====================================================
+# .gitattributes - 跨平台換行符號設定
+# =====================================================
+# 確保 Git Hooks（Shell Script）在 Windows 上也能正確執行
+# =====================================================
+
+# 預設：所有文字檔在 checkout 時轉為系統換行符號
+* text=auto
+
+# ─── 強制 LF（Shell Scripts / Unix 工具必須使用 LF） ───
+*.sh text eol=lf
+.git_template/hooks/* text eol=lf
+
+# ─── 強制 LF（Web 相關檔案，確保跨平台一致） ───
+*.astro text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.jsx text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.mdx text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.env.example text eol=lf
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+
+# ─── 允許 CRLF（Windows 專用腳本） ───
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ─── 二進位檔案（不做換行轉換） ───
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary

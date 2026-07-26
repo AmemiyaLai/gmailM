@@ -1,0 +1,37 @@
+---
+/**
+ * BaseLayout 版面元件
+ * 所有頁面的共用外殼，整合 BaseHead（SEO）。
+ * 使用 <slot /> 插入各頁面獨特內容。
+ */
+import BaseHead from "../components/BaseHead.astro";
+import "../styles/global.css";
+
+export interface Props {
+  /** 頁面標題 */
+  title: string;
+  /** 頁面描述（用於 SEO） */
+  description?: string;
+  /** 社群分享預覽圖 URL */
+  image?: string;
+  /** 是否禁止搜尋引擎索引 */
+  noIndex?: boolean;
+}
+
+const { title, description, image, noIndex } = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <BaseHead
+      title={title}
+      description={description}
+      image={image}
+      noIndex={noIndex}
+    />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

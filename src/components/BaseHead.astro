@@ -1,0 +1,65 @@
+---
+/**
+ * BaseHead 元件
+ * 負責注入所有 <head> 內的 SEO meta 標籤、字體與全域樣式。
+ * 請在 BaseLayout 中引入此元件。
+ */
+export interface Props {
+  /** 頁面標題，會附加在網站名稱後（例如：關於我們 | 我的網站） */
+  title: string;
+  /** 頁面描述，用於 SEO meta description 與 og:description */
+  description?: string;
+  /** 社群分享預覽圖（og:image），需提供完整 URL */
+  image?: string;
+  /** 是否禁止搜尋引擎索引此頁面 */
+  noIndex?: boolean;
+}
+
+const {
+  title,
+  description = "使用 Astro 建立的現代化網站",
+  image = "/og-image.png",
+  noIndex = false,
+} = Astro.props;
+
+const siteTitle = "My Astro Site";
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const fullTitle = title ? `${title} | ${siteTitle}` : siteTitle;
+---
+
+<!-- 基礎 Meta -->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="generator" content={Astro.generator} />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" href="/favicon.ico" />
+<link rel="canonical" href={canonicalURL} />
+
+<!-- SEO -->
+<title>{fullTitle}</title>
+<meta name="description" content={description} />
+{noIndex && <meta name="robots" content="noindex, nofollow" />}
+
+<!-- Open Graph / 社群媒體 -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content={canonicalURL} />
+<meta property="og:title" content={fullTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={new URL(image, Astro.url)} />
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:url" content={canonicalURL} />
+<meta name="twitter:title" content={fullTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={new URL(image, Astro.url)} />
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+  rel="stylesheet"
+/>
+
+<!-- 注意：global.css 由 BaseLayout.astro 中的 import 統一引入 -->

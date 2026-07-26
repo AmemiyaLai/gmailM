@@ -1,0 +1,17 @@
+---
+import { getCollection, render } from "astro:content";
+import { KnowledgeLayout } from "@amemiyalai/wiki-center";
+import { site } from "../../site.config";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("knowledge", ({ data }) => data.published && data.locale === "zh-tw");
+  return entries.map((entry) => ({ params: { slug: entry.data.slug }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<KnowledgeLayout site={site} activeId={entry.data.contentId} title={entry.data.title} description={entry.data.description}>
+  <Content />
+</KnowledgeLayout>

@@ -1,0 +1,33 @@
+---
+import { KnowledgeLayout } from "@amemiyalai/wiki-center/astro";
+import { navigation, site } from "../site.config";
+---
+
+<KnowledgeLayout site={site} title={site.name} description={site.defaultSeo.description} showSidebar={false}>
+  <section class="starter-hero">
+    <p class="eyebrow">Astro Knowledge Starter</p>
+    <h1>快速建立你的知識網站</h1>
+    <p>保留共用版型與路由，只需替換網站設定、導航與文章內容。</p>
+    <p><a href="/knowledge">瀏覽知識庫</a> <a href="/knowledge/customization">了解客製化</a></p>
+  </section>
+  <section>
+    <h2>內容分類</h2>
+    <div class="topic-grid">
+      {navigation.map((module) => (
+        <article>
+          <h3>{module.icon} <a href={module.articles[0]?.href}>{module.title}</a></h3>
+          <p>{module.description}</p>
+          <ul>{module.articles.map((article) => <li><a href={article.href}>{article.title}</a></li>)}</ul>
+        </article>
+      ))}
+    </div>
+  </section>
+</KnowledgeLayout>
+
+<style>
+  .starter-hero { padding: 32px; border: 1px solid color-mix(in srgb, var(--knowledge-text) 10%, transparent); border-radius: 22px; background: color-mix(in srgb, var(--knowledge-accent) 8%, transparent); }
+  .eyebrow { color: var(--knowledge-accent); font-weight: 700; letter-spacing: 1px; }
+  h1 { font-size: clamp(32px, 6vw, 56px); }
+  .topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .topic-grid article { padding: 18px; border: 1px solid color-mix(in srgb, var(--knowledge-text) 10%, transparent); border-radius: 14px; background: var(--knowledge-surface); }
+</style>

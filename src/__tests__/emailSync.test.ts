@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockUpsert = vi.fn().mockResolvedValue({ error: null });
+const mockFirstSenderInsert = vi.fn();
 const mockTrigger = vi.fn().mockResolvedValue({});
 const mockListMessages = vi.fn();
 const mockGetMessage = vi.fn();
 
 vi.mock("../lib/supabase", () => ({
   getSupabase: vi.fn(() => ({
-    from: vi.fn().mockReturnValue({ upsert: mockUpsert }),
+    from: vi.fn((table: string) => table === "emails"
+      ? { upsert: mockUpsert }
+      : { insert: mockFirstSenderInsert }),
   })),
 }));
 
@@ -28,6 +31,11 @@ describe("syncEmailsFromGmail()", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUpsert.mockResolvedValue({ error: null });
+    mockFirstSenderInsert.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: null, error: { code: "23505" } }),
+      }),
+    });
     mockTrigger.mockResolvedValue({});
   });
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
-import { sendDiscordNotification, sendDiscordSummary } from "../lib/discord";
+import { sendDiscordNotification, sendDiscordSummary, sendFirstSenderDiscordNotification } from "../lib/discord";
 
 describe("sendDiscordNotification()", () => {
   beforeEach(() => {
@@ -212,5 +212,35 @@ describe("sendDiscordSummary()", () => {
 
     await sendDiscordSummary(summary);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendFirstSenderDiscordNotification()", () => {
+  beforeEach(() => {
+    vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/123/abc");
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, status: 204 });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("應發送含安全提示與正規化地址的首次寄件者通知", async () => {
+    await sendFirstSenderDiscordNotification({
+      threadId: "thread-1", sender: "Alice <alice@example.com>", senderAddress: "alice@example.com",
+      subject: "帳號通知", snippet: "請確認", receivedAt: new Date("2026-07-26T08:00:00Z"),
+      category: "system", labels: ["IMPORTANT"],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].title).toBe("🛡️ 首次寄件者安全提醒");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "正規化地址").value).toBe("alice@example.com");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "安全建議").value).toContain("勿直接開啟");
+  });
+
+  it("Discord 回傳錯誤時應拋出例外", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    await expect(sendFirstSenderDiscordNotification({
+      threadId: "t", sender: "a@example.com", senderAddress: "a@example.com", subject: "", snippet: "",
+      receivedAt: new Date(), category: "system", labels: [],
+    })).rejects.toThrow("Discord webhook failed (500)");
   });
 });

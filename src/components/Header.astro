@@ -6,9 +6,11 @@
 export interface Props {
   /** 是否顯示搜尋按鈕 */
   showSearch?: boolean;
+  /** 是否顯示摘要記錄按鈕 */
+  showSummaries?: boolean;
 }
 
-const { showSearch = true } = Astro.props;
+const { showSearch = true, showSummaries = true } = Astro.props;
 ---
 
 <header class="site-header">
@@ -34,6 +36,15 @@ const { showSearch = true } = Astro.props;
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
           <span>搜尋郵件</span>
+        </a>
+      )}
+      {showSummaries && (
+        <a href="/summaries" class="btn btn-outline nav-btn">
+          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <span>摘要記錄</span>
         </a>
       )}
       <span id="connection-status" class="badge connection-badge">

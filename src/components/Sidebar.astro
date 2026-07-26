@@ -1,0 +1,123 @@
+---
+import { categoryBadge } from "../lib/categoryBadge";
+import { categories } from "../lib/classify";
+
+export interface Props {
+  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries";
+  activeCategory?: string | null;
+}
+
+const { activeView = null, activeCategory = null } = Astro.props;
+---
+
+<aside class="app-sidebar">
+  <nav class="sidebar-nav">
+    <div class="sidebar-section">
+      <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]}>儀表板</a>
+      <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]}>全部郵件</a>
+      <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]}>未讀郵件</a>
+      <a
+        href="/emails?important=1"
+        class:list={["sidebar-link", { active: activeView === "important" }]}
+      >
+        重要郵件
+      </a>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-heading">分類</span>
+      {categories.map((category) => {
+        const badge = categoryBadge(category);
+        return (
+          <a
+            href={`/emails?category=${encodeURIComponent(category)}`}
+            class:list={["sidebar-link", { active: activeCategory === category }]}
+          >
+            {badge && <span class="sidebar-dot" style={`background:${badge.bg};`}></span>}
+            {badge?.label ?? category}
+          </a>
+        );
+      })}
+    </div>
+
+    <div class="sidebar-section">
+      <a href="/search" class:list={["sidebar-link", { active: activeView === "search" }]}>搜尋</a>
+      <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>摘要記錄</a>
+    </div>
+  </nav>
+</aside>
+
+<style>
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .sidebar-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .sidebar-heading {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .sidebar-link:hover {
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text);
+  }
+
+  .sidebar-link.active {
+    background-color: var(--color-primary-muted);
+    color: var(--color-primary-hover);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .sidebar-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar-nav {
+      flex-direction: row;
+      overflow-x: auto;
+      padding: var(--space-3) var(--space-4);
+      gap: var(--space-4);
+    }
+
+    .sidebar-section {
+      flex-direction: row;
+      flex-shrink: 0;
+    }
+
+    .sidebar-heading {
+      display: none;
+    }
+
+    .sidebar-link {
+      white-space: nowrap;
+    }
+  }
+</style>

@@ -1,4 +1,5 @@
 import { categoryBadge } from "./categoryBadge";
+import { formatEmailDate } from "./formatEmailDate";
 
 export interface NewEmailData {
   id: string;
@@ -14,7 +15,7 @@ export interface NewEmailData {
 export function renderEmailRowHtml(data: NewEmailData): string {
   const badge = categoryBadge(data.category ?? null);
   const isStarred = Boolean(data.is_starred);
-  const formattedDate = new Date(data.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
+  const formattedDate = formatEmailDate(data.received_at);
 
   return `
     <input type="checkbox" class="email-checkbox" aria-label="選取郵件" />

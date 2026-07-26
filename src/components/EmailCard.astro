@@ -1,5 +1,6 @@
 ---
 import { categoryBadge } from "../lib/categoryBadge";
+import { formatEmailDate } from "../lib/formatEmailDate";
 
 export interface Props {
   id: string;
@@ -32,7 +33,7 @@ const {
 } = Astro.props;
 
 const badge = categoryBadge(category);
-const formattedDate = new Date(receivedAt).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
+const formattedDate = formatEmailDate(receivedAt);
 ---
 
 <div

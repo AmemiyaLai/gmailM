@@ -4,13 +4,11 @@
  * 提供包含網頁左上角 Logo、品牌標題與頂部導航之共用導航列。
  */
 export interface Props {
-  /** 是否顯示搜尋按鈕 */
-  showSearch?: boolean;
   /** 是否顯示摘要記錄按鈕 */
   showSummaries?: boolean;
 }
 
-const { showSearch = true, showSummaries = true } = Astro.props;
+const { showSummaries = true } = Astro.props;
 ---
 
 <header class="site-header">
@@ -29,15 +27,17 @@ const { showSearch = true, showSummaries = true } = Astro.props;
 
     <!-- 右側導航與連線狀態 -->
     <nav class="header-nav">
-      {showSearch && (
-        <a href="/search" class="btn btn-outline nav-btn">
+      <div class="header-search-wrap">
+        <button id="search-toggle" type="button" class="btn btn-outline nav-btn search-toggle-btn" title="搜尋郵件" aria-label="搜尋郵件" aria-expanded="false">
           <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>搜尋郵件</span>
-        </a>
-      )}
+        </button>
+        <form id="header-search-form" class="header-search" action="/search" method="get">
+          <input type="text" name="q" id="header-search-input" placeholder="搜尋寄件者 / 主旨 / 內文摘要" autocomplete="off" />
+        </form>
+      </div>
       {showSummaries && (
         <a href="/summaries" class="btn btn-outline nav-btn">
           <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -50,6 +50,14 @@ const { showSearch = true, showSummaries = true } = Astro.props;
       <span id="connection-status" class="badge connection-badge">
         連線中...
       </span>
+      <button id="sync-now" type="button" class="btn btn-outline nav-btn" title="立即從 Gmail 同步最新郵件">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 4v6h-6"></path>
+          <path d="M1 20v-6h6"></path>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span>立即同步</span>
+      </button>
       <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
         <svg id="theme-icon-light" class="theme-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="4"></circle>
@@ -82,6 +90,76 @@ const { showSearch = true, showSummaries = true } = Astro.props;
       document.documentElement.dataset.theme = next;
       localStorage.setItem("theme", next);
       syncIcons();
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var syncBtn = document.getElementById("sync-now");
+    var syncLabel = syncBtn.querySelector("span");
+    var defaultLabel = syncLabel.textContent;
+
+    syncBtn.addEventListener("click", function () {
+      if (syncBtn.disabled) return;
+      syncBtn.disabled = true;
+      syncLabel.textContent = "同步中...";
+
+      fetch("/api/gmail/sync", { method: "POST" })
+        .then(function (res) { return res.json(); })
+        .then(function (result) {
+          syncLabel.textContent = result.error ? "同步失敗" : "已同步 " + result.imported + " 封";
+          if (!result.error) {
+            setTimeout(function () { window.location.reload(); }, 800);
+          }
+        })
+        .catch(function () {
+          syncLabel.textContent = "同步失敗";
+        })
+        .finally(function () {
+          setTimeout(function () {
+            syncBtn.disabled = false;
+            syncLabel.textContent = defaultLabel;
+          }, 2500);
+        });
+    });
+  })();
+</script>
+
+<script is:inline>
+  (function () {
+    var wrap = document.querySelector(".header-search-wrap");
+    var toggleBtn = document.getElementById("search-toggle");
+    var input = document.getElementById("header-search-input");
+
+    function close() {
+      wrap.classList.remove("header-search-wrap--open");
+      toggleBtn.setAttribute("aria-expanded", "false");
+    }
+
+    function open() {
+      wrap.classList.add("header-search-wrap--open");
+      toggleBtn.setAttribute("aria-expanded", "true");
+      input.focus();
+    }
+
+    toggleBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (wrap.classList.contains("header-search-wrap--open")) {
+        close();
+      } else {
+        open();
+      }
+    });
+
+    wrap.addEventListener("click", function (e) {
+      e.stopPropagation();
+    });
+
+    document.addEventListener("click", close);
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") close();
     });
   })();
 </script>
@@ -205,6 +283,50 @@ const { showSearch = true, showSummaries = true } = Astro.props;
 
   .search-icon {
     opacity: 0.8;
+  }
+
+  .header-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .search-toggle-btn {
+    padding: var(--space-2);
+  }
+
+  .header-search {
+    position: absolute;
+    right: 0;
+    top: calc(100% + var(--space-2));
+    width: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: width var(--transition-base), opacity var(--transition-base);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-md);
+  }
+
+  .header-search-wrap--open .header-search {
+    width: 260px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .header-search input {
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    border-radius: var(--radius-full);
+  }
+
+  .header-search input:focus {
+    outline: none;
   }
 
   .theme-toggle-btn {

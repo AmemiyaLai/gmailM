@@ -52,12 +52,11 @@ const { data, error } = await query;
 const emails = (data ?? []) as EmailResult[];
 ---
 
-<SidebarLayout title="搜尋 — Gmail 即時監控面板" showSearch={false} activeView="search">
+<SidebarLayout title="搜尋 — Gmail 即時監控面板" activeView="search">
     <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">搜尋郵件</h1>
 
     <FilterBar
       action="/search"
-      showQ
       q={filters.q}
       category={filters.category}
       sender={filters.sender}

@@ -183,3 +183,50 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
   const hasMore = rows.length > limit;
   return { emails: rows.slice(0, limit), hasMore };
 }
+
+export interface SenderStat {
+  sender: string;
+  count: number;
+  latestReceivedAt: string;
+  categories: string[];
+}
+
+export async function getSenderStats(minCount = 2): Promise<SenderStat[]> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("emails" as never)
+    .select("sender, category, received_at");
+
+  const rows = (data ?? []) as { sender: string; category: string | null; received_at: string }[];
+  const map = new Map<string, { count: number; latestReceivedAt: string; categories: Set<string> }>();
+
+  for (const row of rows) {
+    const existing = map.get(row.sender);
+    if (existing) {
+      existing.count++;
+      if (row.received_at > existing.latestReceivedAt) {
+        existing.latestReceivedAt = row.received_at;
+      }
+      if (row.category) existing.categories.add(row.category);
+    } else {
+      const categories = new Set<string>();
+      if (row.category) categories.add(row.category);
+      map.set(row.sender, { count: 1, latestReceivedAt: row.received_at, categories });
+    }
+  }
+
+  const stats: SenderStat[] = [];
+  for (const [sender, info] of map) {
+    if (info.count >= minCount) {
+      stats.push({
+        sender,
+        count: info.count,
+        latestReceivedAt: info.latestReceivedAt,
+        categories: Array.from(info.categories),
+      });
+    }
+  }
+
+  stats.sort((a, b) => b.count - a.count);
+  return stats;
+}

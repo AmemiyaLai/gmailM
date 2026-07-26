@@ -156,6 +156,17 @@ export async function markAsRead(messageId: string): Promise<void> {
   });
 }
 
+export async function markAsUnread(messageId: string): Promise<void> {
+  const gmail = getGmailClient();
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: {
+      addLabelIds: ["UNREAD"],
+    },
+  });
+}
+
 export async function setStarred(messageId: string, starred: boolean): Promise<void> {
   const gmail = getGmailClient();
   await gmail.users.messages.modify({

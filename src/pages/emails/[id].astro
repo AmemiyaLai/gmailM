@@ -54,6 +54,9 @@ const badge = categoryBadge(email.category);
         <span id="read-status" class="badge" style={`background:var(--color-bg-tertiary); color:var(--color-text-tertiary);`}>
           {email.is_read ? "已讀" : "未讀"}
         </span>
+        <button type="button" id="toggle-read-btn" class="btn btn-outline" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);">
+          {email.is_read ? "標為未讀" : "標為已讀"}
+        </button>
       </div>
 
       <h1 style="font-size:var(--font-size-xl); margin-bottom:var(--space-4);">
@@ -103,15 +106,45 @@ const badge = categoryBadge(email.category);
       });
     }
 
-    if (!isRead) {
+    let currentIsRead = isRead;
+
+    if (!currentIsRead) {
       fetch(`/api/emails/${encodeURIComponent(emailId)}/read`, { method: "PATCH" })
         .then((res) => {
           if (res.ok) {
+            currentIsRead = true;
             const statusEl = document.getElementById("read-status");
+            const btn = document.getElementById("toggle-read-btn");
             if (statusEl) statusEl.textContent = "已讀";
+            if (btn) btn.textContent = "標為未讀";
           }
         })
         .catch((err) => console.warn("標記已讀失敗：", err));
+    }
+
+    const toggleBtn = document.getElementById("toggle-read-btn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", async () => {
+        toggleBtn.disabled = true;
+        const nextRead = !currentIsRead;
+        try {
+          const res = await fetch(`/api/emails/${encodeURIComponent(emailId)}/read`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ read: nextRead }),
+          });
+          if (res.ok) {
+            currentIsRead = nextRead;
+            const statusEl = document.getElementById("read-status");
+            if (statusEl) statusEl.textContent = nextRead ? "已讀" : "未讀";
+            toggleBtn.textContent = nextRead ? "標為未讀" : "標為已讀";
+          }
+        } catch (err) {
+          console.error("切換已讀狀態失敗：", err);
+        } finally {
+          toggleBtn.disabled = false;
+        }
+      });
     }
   </script>
 </SidebarLayout>

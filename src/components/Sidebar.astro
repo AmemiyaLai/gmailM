@@ -3,7 +3,7 @@ import { categoryBadge } from "../lib/categoryBadge";
 import { categories } from "../lib/classify";
 
 export interface Props {
-  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries";
+  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders";
   activeCategory?: string | null;
 }
 
@@ -25,12 +25,13 @@ const { activeView = null, activeCategory = null } = Astro.props;
         <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" /><path d="m4 4 8 8 8-8" /></svg>
         未讀郵件
       </a>
-      <a
-        href="/emails?important=1"
-        class:list={["sidebar-link", { active: activeView === "important" }]}
-      >
+      <a href="/emails?important=1" class:list={["sidebar-link", { active: activeView === "important" }]}>
         <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" /></svg>
         重要郵件
+      </a>
+      <a href="/senders" class:list={["sidebar-link", { active: activeView === "senders" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+        常見寄件者
       </a>
     </div>
 
@@ -51,10 +52,6 @@ const { activeView = null, activeCategory = null } = Astro.props;
     </div>
 
     <div class="sidebar-section">
-      <a href="/search" class:list={["sidebar-link", { active: activeView === "search" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-        搜尋
-      </a>
       <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>
         <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
         摘要記錄

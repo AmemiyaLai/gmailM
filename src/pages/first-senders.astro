@@ -1,0 +1,47 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import { formatEmailDate } from "../lib/formatEmailDate";
+import { getFirstSenderEvents } from "../lib/emailQueries";
+
+const events = await getFirstSenderEvents();
+const statusLabel: Record<string, string> = {
+  baseline: "既有基線",
+  pending: "待發送",
+  failed: "發送失敗",
+  sent: "已發送",
+};
+---
+
+<SidebarLayout title="首次寄件者安全紀錄 — Gmail 即時監控面板" activeView="first-senders">
+  <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-2);">首次寄件者安全紀錄</h1>
+  <p style="color:var(--color-text-secondary); margin:0 0 var(--space-6);">
+    首次來信表示需要驗證身分，並不等同釣魚郵件；請勿直接開啟可疑連結或附件。
+  </p>
+
+  {events.length === 0 ? (
+    <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">目前尚無首次寄件者紀錄。</div>
+  ) : (
+    <div style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:auto;">
+      <table style="width:100%; min-width:820px; border-collapse:collapse; font-size:var(--font-size-sm);">
+        <thead><tr style="background:var(--color-bg-secondary); border-bottom:1px solid var(--color-border);">
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">寄件者</th>
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">地址</th>
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">首次來信</th>
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">來源</th>
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">Discord</th>
+          <th style="padding:var(--space-3) var(--space-4); text-align:left;">狀態／錯誤</th>
+        </tr></thead>
+        <tbody>{events.map((event) => (
+          <tr style="border-bottom:1px solid var(--color-border-subtle);">
+            <td style="padding:var(--space-3) var(--space-4);">{event.sender_display}</td>
+            <td style="padding:var(--space-3) var(--space-4); color:var(--color-text-secondary);">{event.sender_address}</td>
+            <td style="padding:var(--space-3) var(--space-4); white-space:nowrap;"><a href={`/emails/${event.first_email_id}`} style="color:var(--color-primary-hover);">{formatEmailDate(event.first_received_at)}</a></td>
+            <td style="padding:var(--space-3) var(--space-4);">{event.source === "live" ? "即時來信" : "既有基線"}</td>
+            <td style="padding:var(--space-3) var(--space-4);">{statusLabel[event.notification_status]}{event.notification_attempts > 0 ? `（${event.notification_attempts} 次）` : ""}</td>
+            <td style="padding:var(--space-3) var(--space-4); color:var(--color-text-tertiary); max-width:260px;">{event.last_notification_error ?? "—"}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  )}
+</SidebarLayout>

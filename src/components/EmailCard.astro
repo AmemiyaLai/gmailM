@@ -13,6 +13,7 @@ export interface Props {
   category: string | null;
   isImportant?: boolean;
   isStarred?: boolean;
+  isFirstSender?: boolean;
   compact?: boolean;
   showCheckbox?: boolean;
   rowStyle?: string;
@@ -28,6 +29,7 @@ const {
   category,
   isImportant = false,
   isStarred = false,
+  isFirstSender = false,
   compact = false,
   showCheckbox = true,
   rowStyle = "",
@@ -63,6 +65,7 @@ const formattedDate = formatEmailDate(receivedAt);
         {badge.label}
       </span>
     )}
+    {isFirstSender && <span class="badge chip first-sender-chip">首次寄件者</span>}
   </a>
 
   <div class="email-meta">
@@ -187,6 +190,11 @@ const formattedDate = formatEmailDate(receivedAt);
 
   .chip {
     flex-shrink: 0;
+  }
+
+  .first-sender-chip {
+    background: rgba(249, 115, 22, 0.15);
+    color: #c2410c;
   }
 
   .email-meta {

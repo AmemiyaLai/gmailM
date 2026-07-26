@@ -1,0 +1,230 @@
+---
+import type { SenderGroup } from "../lib/senderGroups";
+import type { TopSender } from "../lib/emailQueries";
+import { extractSenderName } from "../lib/senderUtils";
+
+export interface Props {
+  groups: SenderGroup[];
+  unreadCounts: Record<string, number>;
+  topSenders: Record<string, TopSender[]>;
+}
+
+const { groups, unreadCounts, topSenders } = Astro.props;
+---
+
+<div class="sgrid">
+  {groups.map((group) => {
+    const count = unreadCounts[group.id] ?? 0;
+    const tops: TopSender[] = topSenders[group.id] ?? [];
+    return (
+      <div
+        class="sgcard"
+        id={`sgcard-${group.id}`}
+        role="button"
+        tabindex="0"
+        data-href={`/group/${group.id}`}
+        aria-label={`${group.label} — ${count} 封未讀`}
+      >
+        {/* 標題列：圖示 + 群組名稱 + 未讀數量 */}
+        <div class="sgcard-top">
+          <span class="sgcard-icon" style={`color: var(${group.colorVar});`}>
+            {group.icon}
+          </span>
+          <div class="sgcard-info">
+            <span class="sgcard-label">{group.label}</span>
+            {count > 0 ? (
+              <span
+                class="sgcard-count"
+                style={`background: color-mix(in srgb, var(${group.colorVar}) 18%, transparent); color: var(${group.colorVar});`}
+              >
+                {count} 封未讀
+              </span>
+            ) : (
+              <span class="sgcard-count sgcard-count--zero">全部已讀</span>
+            )}
+          </div>
+        </div>
+
+        {/* Top 3 寄件人：合法的 <a> 在 <div> 內 */}
+        {tops.length > 0 && (
+          <div class="sgcard-senders">
+            {tops.map((ts) => (
+              <a
+                href={`/group/${group.id}?sender=${encodeURIComponent(ts.sender)}`}
+                class="sgcard-sender-btn"
+                title={ts.sender}
+              >
+                <span class="sgcard-sender-name">{extractSenderName(ts.sender)}</span>
+                <span class="sgcard-sender-count">{ts.count}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  })}
+</div>
+
+<script>
+  // 外層卡片點擊導航（排除內部連結自己的點擊）
+  document.querySelectorAll<HTMLElement>(".sgcard[data-href]").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      // 若點到內部的 <a>（寄件人按鈕），讓其自然導航，不攔截
+      if (target.closest("a")) return;
+      window.location.href = card.dataset.href!;
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        window.location.href = card.dataset.href!;
+      }
+    });
+  });
+</script>
+
+<style>
+  /* 2×3 grid：直接填滿右半邊 */
+  .sgrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
+    gap: var(--space-3);
+    height: 100%;
+  }
+
+  /* 每張卡片 */
+  .sgcard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition:
+      border-color var(--transition-fast),
+      background var(--transition-fast),
+      transform var(--transition-fast),
+      box-shadow var(--transition-fast);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .sgcard:hover {
+    border-color: var(--color-primary);
+    background: var(--color-bg-tertiary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .sgcard:active {
+    transform: translateY(0);
+  }
+
+  /* ── 標題列 ── */
+  .sgcard-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  .sgcard-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+  }
+
+  .sgcard:hover .sgcard-icon {
+    transform: scale(1.15);
+  }
+
+  .sgcard-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .sgcard-label {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sgcard-count {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.4;
+  }
+
+  .sgcard-count--zero {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-tertiary);
+  }
+
+  /* ── Top 3 寄件人按鈕 ── */
+  .sgcard-senders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: auto;      /* 把按鈕推到卡片底部 */
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .sgcard-sender-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px var(--space-2);
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    max-width: 100%;
+    overflow: hidden;
+    cursor: pointer;
+    transition:
+      border-color var(--transition-fast),
+      color var(--transition-fast),
+      background var(--transition-fast);
+  }
+
+  .sgcard-sender-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary-hover);
+    background: var(--color-primary-muted);
+  }
+
+  .sgcard-sender-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px;
+  }
+
+  .sgcard-sender-count {
+    flex-shrink: 0;
+    background: var(--color-bg);
+    border-radius: var(--radius-full);
+    padding: 0 4px;
+    font-size: 0.6rem;
+    color: var(--color-text-tertiary);
+    line-height: 1.5;
+  }
+</style>

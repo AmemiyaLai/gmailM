@@ -424,3 +424,46 @@ pre code {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* ─────────────────────────────────────────────────────
+   首頁儀錶板：摘要 50/50 垂直分割布局
+   ───────────────────────────────────────────────────── */
+.summary-split {
+  display: flex;
+  gap: var(--space-4);
+  align-items: stretch;
+  margin-bottom: var(--space-6);
+}
+
+.summary-split-left {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-split-right {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 讓左半邊的 SummaryPanel card 撐滿高度 */
+.summary-split-left > .card {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* RWD：平板以下垂直堆疊 */
+@media (max-width: 1024px) {
+  .summary-split {
+    flex-direction: column;
+  }
+  .summary-split-left,
+  .summary-split-right {
+    flex: none;
+    width: 100%;
+  }
+}
+

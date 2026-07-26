@@ -91,7 +91,11 @@ const emails = (data ?? []) as EmailResult[];
       {emails.map((email) => {
         const badge = categoryBadge(email.category);
         return (
-          <article class="card" style={`opacity: ${email.is_read ? 0.6 : 1};`}>
+          <a
+            href={`/emails/${email.id}`}
+            class="card"
+            style={`opacity: ${email.is_read ? 0.6 : 1}; display:block; text-decoration:none; color:inherit;`}
+          >
             <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
               <div style="min-width:0; flex:1;">
                 <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
@@ -118,7 +122,7 @@ const emails = (data ?? []) as EmailResult[];
                 {new Date(email.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
               </time>
             </div>
-          </article>
+          </a>
         );
       })}
 

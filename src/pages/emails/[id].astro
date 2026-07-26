@@ -1,0 +1,119 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import { getSupabase } from "../../lib/supabase";
+import { categoryBadge } from "../../lib/categoryBadge";
+
+interface EmailDetail {
+  id: string;
+  sender: string;
+  recipient: string | null;
+  subject: string;
+  snippet: string;
+  body_html: string | null;
+  body_plain: string | null;
+  received_at: string;
+  is_read: boolean;
+  category: string | null;
+}
+
+const { id } = Astro.params;
+
+if (!id) {
+  return new Response("找不到這封郵件", { status: 404 });
+}
+
+const supabase = getSupabase();
+const { data } = await supabase
+  .from("emails" as never)
+  .select("id, sender, recipient, subject, snippet, body_html, body_plain, received_at, is_read, category")
+  .eq("id", id)
+  .single();
+
+const email = data as EmailDetail | null;
+
+if (!email) {
+  return new Response("找不到這封郵件", { status: 404 });
+}
+
+const badge = categoryBadge(email.category);
+---
+
+<BaseLayout title={email.subject || "(無主旨)"}>
+  <Header showSearch={true} />
+  <main class="container" style="padding: var(--space-6) 0 var(--space-12) 0; max-width: var(--container-md); margin-inline: auto;">
+    <a href="/" style="display:inline-flex; align-items:center; gap:var(--space-2); color:var(--color-text-tertiary); font-size:var(--font-size-sm); margin-bottom:var(--space-6);">
+      ← 回到面板
+    </a>
+
+    <div class="card" style="padding:var(--space-6);">
+      <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-3);">
+        {badge && (
+          <span class="badge" style={`background:${badge.bg}; color:${badge.color};`}>
+            {badge.label}
+          </span>
+        )}
+        <span id="read-status" class="badge" style={`background:var(--color-bg-tertiary); color:var(--color-text-tertiary);`}>
+          {email.is_read ? "已讀" : "未讀"}
+        </span>
+      </div>
+
+      <h1 style="font-size:var(--font-size-xl); margin-bottom:var(--space-4);">
+        {email.subject || "(無主旨)"}
+      </h1>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:var(--space-4); margin-bottom:var(--space-4); border-bottom:1px solid var(--color-border-subtle);">
+        <div style="font-size:var(--font-size-sm); color:var(--color-text-secondary);">
+          <div><strong style="color:var(--color-text);">寄件者：</strong>{email.sender}</div>
+          {email.recipient && <div><strong style="color:var(--color-text);">收件者：</strong>{email.recipient}</div>}
+        </div>
+        <time datetime={email.received_at} style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap;">
+          {new Date(email.received_at).toLocaleString("zh-TW")}
+        </time>
+      </div>
+
+      <div id="email-body">
+        {email.body_html ? (
+          <iframe
+            id="email-html-frame"
+            sandbox="allow-same-origin"
+            srcdoc={email.body_html}
+            style="width:100%; border:0; min-height:200px; background:white; border-radius:var(--radius-md);"
+          />
+        ) : email.body_plain ? (
+          <pre style="white-space:pre-wrap; word-break:break-word; font-family:var(--font-sans); font-size:var(--font-size-sm); color:var(--color-text-secondary);">{email.body_plain}</pre>
+        ) : (
+          <p style="color:var(--color-text-tertiary);">{email.snippet || "（沒有內文內容）"}</p>
+        )}
+      </div>
+    </div>
+  </main>
+
+  <script is:inline define:vars={{ emailId: email.id, isRead: email.is_read }}>
+    const frame = document.getElementById("email-html-frame");
+    if (frame) {
+      frame.addEventListener("load", () => {
+        try {
+          const doc = frame.contentDocument;
+          if (doc) {
+            const height = doc.documentElement.scrollHeight;
+            frame.style.height = `${height + 24}px`;
+          }
+        } catch {
+          // 無法讀取內容時保留預設高度
+        }
+      });
+    }
+
+    if (!isRead) {
+      fetch(`/api/emails/${encodeURIComponent(emailId)}/read`, { method: "PATCH" })
+        .then((res) => {
+          if (res.ok) {
+            const statusEl = document.getElementById("read-status");
+            if (statusEl) statusEl.textContent = "已讀";
+          }
+        })
+        .catch((err) => console.warn("標記已讀失敗：", err));
+    }
+  </script>
+</BaseLayout>

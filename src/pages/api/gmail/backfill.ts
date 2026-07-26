@@ -13,7 +13,7 @@ export const GET: APIRoute = async ({ request, url }) => {
   }
 
   const maxResults = Math.min(
-    200,
+    1000,
     Number(url.searchParams.get("limit")) || 50,
   );
 

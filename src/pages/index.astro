@@ -31,11 +31,12 @@ const emails = (data ?? []) as EmailPreview[];
       {emails.map((email) => {
         const badge = categoryBadge(email.category);
         return (
-          <article
+          <a
+            href={`/emails/${email.id}`}
             class="card email-card"
             data-id={email.id}
             data-read={email.is_read ? "true" : "false"}
-            style={`opacity: ${email.is_read ? 0.6 : 1}; cursor:pointer;`}
+            style={`opacity: ${email.is_read ? 0.6 : 1}; display:block; text-decoration:none; color:inherit;`}
           >
             <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
               <div style="min-width:0; flex:1;">
@@ -67,7 +68,7 @@ const emails = (data ?? []) as EmailPreview[];
                 {new Date(email.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
               </time>
             </div>
-          </article>
+          </a>
         );
       })}
 
@@ -121,12 +122,15 @@ const emails = (data ?? []) as EmailPreview[];
       }) => {
         const badge = data.category ? CATEGORY_BADGES[data.category] : null;
 
-        const article = document.createElement("article");
-        article.className = "card email-card";
-        article.dataset.id = data.id;
-        article.dataset.read = "false";
-        article.style.cursor = "pointer";
-        article.innerHTML = `
+        const link = document.createElement("a");
+        link.href = `/emails/${encodeURIComponent(data.id)}`;
+        link.className = "card email-card";
+        link.dataset.id = data.id;
+        link.dataset.read = "false";
+        link.style.display = "block";
+        link.style.textDecoration = "none";
+        link.style.color = "inherit";
+        link.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
             <div style="min-width:0; flex:1;">
               <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
@@ -152,33 +156,8 @@ const emails = (data ?? []) as EmailPreview[];
           </div>
         `;
 
-        listEl.prepend(article);
+        listEl.prepend(link);
       },
     );
-
-    async function markAsRead(card: HTMLElement) {
-      if (card.dataset.read === "true") return;
-      const id = card.dataset.id;
-      if (!id) return;
-
-      card.dataset.read = "true";
-      card.style.opacity = "0.6";
-      const dot = card.querySelector<HTMLElement>(".unread-dot");
-      if (dot) dot.style.visibility = "hidden";
-
-      try {
-        const res = await fetch(`/api/emails/${encodeURIComponent(id)}/read`, { method: "PATCH" });
-        if (!res.ok) {
-          console.warn(`標記已讀失敗（${res.status}），本地狀態已更新但可能未同步回 Gmail。`);
-        }
-      } catch (err) {
-        console.warn("標記已讀請求失敗：", err);
-      }
-    }
-
-    listEl.addEventListener("click", (event) => {
-      const card = (event.target as HTMLElement).closest<HTMLElement>(".email-card");
-      if (card) markAsRead(card);
-    });
   </script>
 </BaseLayout>

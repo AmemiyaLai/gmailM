@@ -112,7 +112,7 @@ export const POST: APIRoute = async ({ request }) => {
       });
 
       if (gmailMsg.labels.includes("IMPORTANT")) {
-        await sendDiscordNotification(gmailMsg).catch((err) =>
+        await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
           console.error(`Failed to send Discord notification for ${messageId}:`, err),
         );
       }

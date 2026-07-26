@@ -7,6 +7,7 @@ const requiredRoutes = [
   "src/pages/api/webhook/gmail.ts",
   "src/pages/api/gmail/watch-renew.ts",
   "src/pages/api/emails/[id]/read.ts",
+  "src/pages/emails/[id].astro",
 ];
 
 const missing = requiredRoutes.filter((file) => !existsSync(file));

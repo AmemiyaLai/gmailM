@@ -17,12 +17,12 @@ export interface Props {
 
 const {
   title,
-  description = "使用 Astro 建立的現代化網站",
+  description = "Gmail 即時監控面板",
   image = "/og-image.png",
   noIndex = false,
 } = Astro.props;
 
-const siteTitle = "My Astro Site";
+const siteTitle = "Gmail Monitor";
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const fullTitle = title ? `${title} | ${siteTitle}` : siteTitle;
 ---

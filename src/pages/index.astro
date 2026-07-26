@@ -1,33 +1,191 @@
 ---
-import { KnowledgeLayout } from "@amemiyalai/wiki-center/astro";
-import { navigation, site } from "../site.config";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { getSupabase } from "../lib/supabase";
+import { categoryBadge } from "../lib/categoryBadge";
+
+interface EmailPreview {
+  id: string;
+  sender: string;
+  subject: string;
+  snippet: string;
+  received_at: string;
+  is_read: boolean;
+  category: string | null;
+}
+
+const supabase = getSupabase();
+const { data } = await supabase
+  .from("emails" as never)
+  .select("id, sender, subject, snippet, received_at, is_read, category")
+  .order("received_at", { ascending: false })
+  .limit(20);
+const emails = (data ?? []) as EmailPreview[];
 ---
 
-<KnowledgeLayout site={site} title={site.name} description={site.defaultSeo.description} showSidebar={false}>
-  <section class="starter-hero">
-    <p class="eyebrow">Astro Knowledge Starter</p>
-    <h1>快速建立你的知識網站</h1>
-    <p>保留共用版型與路由，只需替換網站設定、導航與文章內容。</p>
-    <p><a href="/knowledge">瀏覽知識庫</a> <a href="/knowledge/customization">了解客製化</a></p>
-  </section>
-  <section>
-    <h2>內容分類</h2>
-    <div class="topic-grid">
-      {navigation.map((module) => (
-        <article>
-          <h3>{module.icon} <a href={module.articles[0]?.href}>{module.title}</a></h3>
-          <p>{module.description}</p>
-          <ul>{module.articles.map((article) => <li><a href={article.href}>{article.title}</a></li>)}</ul>
-        </article>
-      ))}
-    </div>
-  </section>
-</KnowledgeLayout>
+<BaseLayout title="Gmail 即時監控面板">
+  <main class="container" style="padding: var(--space-8) 0;">
+    <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-8);">
+      <h1 style="font-size:var(--font-size-2xl);">Gmail 即時監控</h1>
+      <div style="display:flex; align-items:center; gap:var(--space-4);">
+        <a href="/search" class="btn btn-outline" style="padding:var(--space-2) var(--space-4);">搜尋</a>
+        <span id="connection-status" class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-tertiary);">
+          連線中...
+        </span>
+      </div>
+    </header>
 
-<style>
-  .starter-hero { padding: 32px; border: 1px solid color-mix(in srgb, var(--knowledge-text) 10%, transparent); border-radius: 22px; background: color-mix(in srgb, var(--knowledge-accent) 8%, transparent); }
-  .eyebrow { color: var(--knowledge-accent); font-weight: 700; letter-spacing: 1px; }
-  h1 { font-size: clamp(32px, 6vw, 56px); }
-  .topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-  .topic-grid article { padding: 18px; border: 1px solid color-mix(in srgb, var(--knowledge-text) 10%, transparent); border-radius: 14px; background: var(--knowledge-surface); }
-</style>
+    <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
+      {emails.map((email) => {
+        const badge = categoryBadge(email.category);
+        return (
+          <article
+            class="card email-card"
+            data-id={email.id}
+            data-read={email.is_read ? "true" : "false"}
+            style={`opacity: ${email.is_read ? 0.6 : 1}; cursor:pointer;`}
+          >
+            <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
+                  <span
+                    class="unread-dot"
+                    style={`width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0; visibility:${email.is_read ? "hidden" : "visible"};`}
+                  ></span>
+                  <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    {email.sender}
+                  </strong>
+                  {badge && (
+                    <span class="badge" style={`background:${badge.bg}; color:${badge.color}; flex-shrink:0;`}>
+                      {badge.label}
+                    </span>
+                  )}
+                </div>
+                <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  {email.subject || "(無主旨)"}
+                </div>
+                <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  {email.snippet}
+                </div>
+              </div>
+              <time
+                datetime={email.received_at}
+                style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
+              >
+                {new Date(email.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
+              </time>
+            </div>
+          </article>
+        );
+      })}
+
+      {emails.length === 0 && (
+        <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
+          尚無郵件資料。部署並啟動 watch 後，新信件將即時出現在這裡。
+        </div>
+      )}
+    </div>
+  </main>
+
+  <script>
+    import Pusher from "pusher-js";
+
+    const CATEGORY_BADGES: Record<string, { label: string; bg: string; color: string }> = {
+      devlog: { label: "開發日誌", bg: "var(--color-info)", color: "white" },
+      newsletter: { label: "電子報", bg: "var(--color-primary-muted)", color: "var(--color-primary-hover)" },
+      system: { label: "系統通知", bg: "var(--color-warning)", color: "white" },
+    };
+
+    const statusEl = document.getElementById("connection-status")!;
+    const listEl = document.getElementById("email-list")!;
+
+    const pusher = new Pusher(import.meta.env.PUBLIC_PUSHER_KEY, {
+      cluster: import.meta.env.PUBLIC_PUSHER_CLUSTER,
+    });
+
+    const channel = pusher.subscribe("gmail-channel");
+
+    channel.bind("pusher:subscription_succeeded", () => {
+      statusEl.textContent = "已連線";
+      statusEl.style.background = "var(--color-primary-muted)";
+      statusEl.style.color = "var(--color-primary-hover)";
+    });
+
+    channel.bind("pusher:subscription_error", () => {
+      statusEl.textContent = "連線失敗";
+      statusEl.style.background = "rgba(239,68,68,0.15)";
+      statusEl.style.color = "var(--color-error)";
+    });
+
+    channel.bind(
+      "new-email",
+      (data: {
+        id: string;
+        sender: string;
+        subject: string;
+        snippet: string;
+        received_at: string;
+        category?: string;
+      }) => {
+        const badge = data.category ? CATEGORY_BADGES[data.category] : null;
+
+        const article = document.createElement("article");
+        article.className = "card email-card";
+        article.dataset.id = data.id;
+        article.dataset.read = "false";
+        article.style.cursor = "pointer";
+        article.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
+            <div style="min-width:0; flex:1;">
+              <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
+                <span class="unread-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0;"></span>
+                <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                  ${data.sender}
+                </strong>
+                ${badge ? `<span class="badge" style="background:${badge.bg}; color:${badge.color}; flex-shrink:0;">${badge.label}</span>` : ""}
+              </div>
+              <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${data.subject || "(無主旨)"}
+              </div>
+              <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${data.snippet}
+              </div>
+            </div>
+            <time
+              datetime="${data.received_at}"
+              style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
+            >
+              ${new Date(data.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
+            </time>
+          </div>
+        `;
+
+        listEl.prepend(article);
+      },
+    );
+
+    async function markAsRead(card: HTMLElement) {
+      if (card.dataset.read === "true") return;
+      const id = card.dataset.id;
+      if (!id) return;
+
+      card.dataset.read = "true";
+      card.style.opacity = "0.6";
+      const dot = card.querySelector<HTMLElement>(".unread-dot");
+      if (dot) dot.style.visibility = "hidden";
+
+      try {
+        const res = await fetch(`/api/emails/${encodeURIComponent(id)}/read`, { method: "PATCH" });
+        if (!res.ok) {
+          console.warn(`標記已讀失敗（${res.status}），本地狀態已更新但可能未同步回 Gmail。`);
+        }
+      } catch (err) {
+        console.warn("標記已讀請求失敗：", err);
+      }
+    }
+
+    listEl.addEventListener("click", (event) => {
+      const card = (event.target as HTMLElement).closest<HTMLElement>(".email-card");
+      if (card) markAsRead(card);
+    });
+  </script>
+</BaseLayout>

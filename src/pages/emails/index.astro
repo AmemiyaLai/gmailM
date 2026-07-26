@@ -1,42 +1,49 @@
 ---
 import SidebarLayout from "../../layouts/SidebarLayout.astro";
 import EmailCard from "../../components/EmailCard.astro";
+import FilterBar from "../../components/FilterBar.astro";
 import { listEmails } from "../../lib/emailQueries";
 import { categoryBadge } from "../../lib/categoryBadge";
+import { parseEmailFilterParams, buildFilterHref } from "../../lib/emailFilters";
 
 const PAGE_SIZE = 50;
 
-const category = Astro.url.searchParams.get("category")?.trim() || undefined;
-const important = Astro.url.searchParams.get("important") === "1";
-const page = Math.max(1, Number(Astro.url.searchParams.get("page") ?? "1") || 1);
-const offset = (page - 1) * PAGE_SIZE;
+const filters = parseEmailFilterParams(Astro.url);
+const offset = (filters.page - 1) * PAGE_SIZE;
 
 const { emails, hasMore } = await listEmails({
-  category,
-  onlyImportant: important,
+  category: filters.category,
+  sender: filters.sender,
+  recipient: filters.recipient,
+  from: filters.from,
+  to: filters.to,
+  onlyUnread: filters.unread,
+  onlyImportant: filters.important,
   limit: PAGE_SIZE,
   offset,
 });
 
-function pageHref(targetPage: number): string {
-  const params = new URLSearchParams();
-  if (category) params.set("category", category);
-  if (important) params.set("important", "1");
-  if (targetPage > 1) params.set("page", String(targetPage));
-  const qs = params.toString();
-  return qs ? `/emails?${qs}` : "/emails";
-}
-
-const badge = category ? categoryBadge(category) : null;
-const heading = important ? "重要郵件" : category ? `分類：${badge?.label ?? category}` : "全部郵件";
+const badge = filters.category ? categoryBadge(filters.category) : null;
+const heading = filters.important ? "重要郵件" : filters.category ? `分類：${badge?.label ?? filters.category}` : "全部郵件";
 ---
 
 <SidebarLayout
   title={`${heading} — Gmail 即時監控面板`}
-  activeView={important ? "important" : "all"}
-  activeCategory={category ?? null}
+  activeView={filters.important ? "important" : "all"}
+  activeCategory={filters.category ?? null}
 >
   <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
+
+  <FilterBar
+    action="/emails"
+    category={filters.category}
+    sender={filters.sender}
+    recipient={filters.recipient}
+    from={filters.from}
+    to={filters.to}
+    unread={filters.unread}
+    important={filters.important}
+  />
 
   <div id="email-list" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
     {emails.map((email) => (
@@ -61,10 +68,10 @@ const heading = important ? "重要郵件" : category ? `分類：${badge?.label
   </div>
 
   <div style="display:flex; justify-content:space-between; margin-top:var(--space-8);">
-    {page > 1 ? (
-      <a href={pageHref(page - 1)} class="btn btn-outline">上一頁</a>
+    {filters.page > 1 ? (
+      <a href={buildFilterHref("/emails", { ...filters, page: filters.page - 1 })} class="btn btn-outline">上一頁</a>
     ) : <span />}
-    {hasMore && <a href={pageHref(page + 1)} class="btn btn-outline">下一頁</a>}
+    {hasMore && <a href={buildFilterHref("/emails", { ...filters, page: filters.page + 1 })} class="btn btn-outline">下一頁</a>}
   </div>
 
   <script>

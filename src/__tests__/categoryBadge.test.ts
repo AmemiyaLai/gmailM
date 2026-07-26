@@ -22,6 +22,24 @@ describe("categoryBadge()", () => {
     expect(badge!.label).toBe("系統通知");
   });
 
+  it("應回傳 banking 的 badge 資訊", () => {
+    const badge = categoryBadge("banking");
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe("銀行 / 金融");
+  });
+
+  it("應回傳 ecommerce 的 badge 資訊", () => {
+    const badge = categoryBadge("ecommerce");
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe("電子商務");
+  });
+
+  it("應回傳 securities 的 badge 資訊", () => {
+    const badge = categoryBadge("securities");
+    expect(badge).not.toBeNull();
+    expect(badge!.label).toBe("證券 / 投資");
+  });
+
   it("應回傳 uncategorized 的 badge 資訊", () => {
     const badge = categoryBadge("uncategorized");
     expect(badge).not.toBeNull();

@@ -86,6 +86,48 @@ describe("classifyEmail()", () => {
     });
   });
 
+  describe("banking 分類", () => {
+    it("應將銀行寄件者歸類為 banking", () => {
+      expect(
+        classifyEmail({ sender: "service@esunbank.com.tw", subject: "帳單通知" }),
+      ).toBe("banking");
+    });
+
+    it("應將 PayPal 寄件者歸類為 banking", () => {
+      expect(
+        classifyEmail({ sender: "service@paypal.com", subject: "收據" }),
+      ).toBe("banking");
+    });
+  });
+
+  describe("ecommerce 分類", () => {
+    it("應將 Shopee 寄件者歸類為 ecommerce", () => {
+      expect(
+        classifyEmail({ sender: "order@shopee.tw", subject: "訂單成立" }),
+      ).toBe("ecommerce");
+    });
+
+    it("應將 Amazon 寄件者歸類為 ecommerce", () => {
+      expect(
+        classifyEmail({ sender: "ship-confirm@amazon.com", subject: "Your order" }),
+      ).toBe("ecommerce");
+    });
+  });
+
+  describe("securities 分類", () => {
+    it("應將證券商寄件者歸類為 securities", () => {
+      expect(
+        classifyEmail({ sender: "service@kgisecurities.com.tw", subject: "對帳單" }),
+      ).toBe("securities");
+    });
+
+    it("應將含 stock 的寄件者歸類為 securities", () => {
+      expect(
+        classifyEmail({ sender: "alerts@stocknotify.com", subject: "test" }),
+      ).toBe("securities");
+    });
+  });
+
   describe("uncategorized 分類", () => {
     it("應將不匹配任何規則的郵件歸類為 uncategorized", () => {
       expect(
@@ -145,10 +187,13 @@ describe("categories", () => {
     expect(categories).toContain("devlog");
     expect(categories).toContain("newsletter");
     expect(categories).toContain("system");
+    expect(categories).toContain("banking");
+    expect(categories).toContain("ecommerce");
+    expect(categories).toContain("securities");
     expect(categories).toContain("uncategorized");
   });
 
-  it("應有 4 個類別", () => {
-    expect(categories.length).toBe(4);
+  it("應有 7 個類別", () => {
+    expect(categories.length).toBe(7);
   });
 });

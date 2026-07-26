@@ -16,6 +16,6 @@ echo 預覽連接埠設定為: %PORT%
 echo 正在啟動開發伺服器...
 echo.
 
-npx astro dev --host --port %PORT%
+call npx astro dev --host --port %PORT%
 
 pause

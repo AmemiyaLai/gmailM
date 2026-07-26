@@ -50,9 +50,41 @@ const { showSearch = true, showSummaries = true } = Astro.props;
       <span id="connection-status" class="badge connection-badge">
         連線中...
       </span>
+      <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
+        <svg id="theme-icon-light" class="theme-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+        <svg id="theme-icon-dark" class="theme-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
     </nav>
   </div>
 </header>
+
+<script is:inline>
+  (function () {
+    var btn = document.getElementById("theme-toggle");
+    var lightIcon = document.getElementById("theme-icon-light");
+    var darkIcon = document.getElementById("theme-icon-dark");
+
+    function syncIcons() {
+      var isDark = document.documentElement.dataset.theme === "dark";
+      lightIcon.style.display = isDark ? "none" : "block";
+      darkIcon.style.display = isDark ? "block" : "none";
+    }
+
+    syncIcons();
+
+    btn.addEventListener("click", function () {
+      var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("theme", next);
+      syncIcons();
+    });
+  })();
+</script>
 
 <style>
   .site-header {
@@ -168,10 +200,19 @@ const { showSearch = true, showSummaries = true } = Astro.props;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
     font-size: var(--font-size-sm);
+    border-radius: var(--radius-full);
   }
 
   .search-icon {
     opacity: 0.8;
+  }
+
+  .theme-toggle-btn {
+    padding: var(--space-2);
+  }
+
+  .theme-icon {
+    display: block;
   }
 
   .connection-badge {

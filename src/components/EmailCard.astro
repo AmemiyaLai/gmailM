@@ -10,7 +10,10 @@ export interface Props {
   isRead: boolean;
   category: string | null;
   isImportant?: boolean;
+  isStarred?: boolean;
   compact?: boolean;
+  showCheckbox?: boolean;
+  rowStyle?: string;
 }
 
 const {
@@ -22,54 +25,210 @@ const {
   isRead,
   category,
   isImportant = false,
+  isStarred = false,
   compact = false,
+  showCheckbox = true,
+  rowStyle = "",
 } = Astro.props;
 
 const badge = categoryBadge(category);
+const formattedDate = new Date(receivedAt).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
 ---
 
-<a
-  href={`/emails/${id}`}
-  class="card email-card"
+<div
+  class="email-row"
+  class:list={{ "email-row--unread": !isRead, "email-row--important": isImportant }}
   data-id={id}
   data-read={isRead ? "true" : "false"}
-  style={`opacity:${isRead ? 0.6 : 1}; display:block; text-decoration:none; color:inherit; ${
-    isImportant ? "border-left:3px solid var(--color-error);" : ""
-  } ${compact ? "padding:var(--space-4);" : ""}`}
+  data-starred={isStarred ? "true" : "false"}
+  style={rowStyle}
 >
-  <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
-    <div style="min-width:0; flex:1;">
-      <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
-        <span
-          class="unread-dot"
-          style={`width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0; visibility:${
-            isRead ? "hidden" : "visible"
-          };`}
-        ></span>
-        <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-          {sender}
-        </strong>
-        {badge && (
-          <span class="badge" style={`background:${badge.bg}; color:${badge.color}; flex-shrink:0;`}>
-            {badge.label}
-          </span>
-        )}
-        {isImportant && <span title="重要郵件" style="flex-shrink:0;">⭐</span>}
-      </div>
-      <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-        {subject || "(無主旨)"}
-      </div>
-      {!compact && (
-        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-          {snippet}
-        </div>
-      )}
+  {showCheckbox && <input type="checkbox" class="email-checkbox" aria-label="選取郵件" />}
+
+  <button type="button" class="star-btn" aria-label="加星號" aria-pressed={isStarred ? "true" : "false"}>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill={isStarred ? "var(--color-warning)" : "none"} stroke="var(--color-text-tertiary)" stroke-width="1.5">
+      <polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" />
+    </svg>
+  </button>
+
+  <a href={`/emails/${id}`} class="email-link">
+    <span class="unread-dot"></span>
+    <span class="email-sender">{sender}</span>
+    <span class="email-subject">{subject || "(無主旨)"}</span>
+    {!compact && <span class="email-snippet">— {snippet}</span>}
+    {badge && (
+      <span class="badge chip" style={`background:${badge.bg}; color:${badge.color};`}>
+        {badge.label}
+      </span>
+    )}
+  </a>
+
+  <div class="email-meta">
+    <time class="email-date" datetime={receivedAt}>{formattedDate}</time>
+    <div class="email-actions">
+      <button type="button" class="action-btn" data-action="read" title={isRead ? "標示為未讀" : "標示為已讀"}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8l9 6 9-6M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" />
+        </svg>
+      </button>
+      <button type="button" class="action-btn" data-action="archive" title="封存">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="4" rx="1" />
+          <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4" />
+        </svg>
+      </button>
+      <button type="button" class="action-btn" data-action="trash" title="刪除">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+        </svg>
+      </button>
     </div>
-    <time
-      datetime={receivedAt}
-      style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
-    >
-      {new Date(receivedAt).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
-    </time>
   </div>
-</a>
+</div>
+
+<style>
+  .email-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background-color: var(--color-surface);
+    transition: box-shadow var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .email-row:hover {
+    box-shadow: var(--shadow-sm);
+    z-index: 1;
+    position: relative;
+  }
+
+  .email-row--unread .email-sender,
+  .email-row--unread .email-subject {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+  }
+
+  .email-row--important {
+    border-left: 3px solid var(--color-error);
+  }
+
+  .email-checkbox {
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+  }
+
+  .star-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: var(--space-1);
+  }
+
+  .unread-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    flex-shrink: 0;
+    visibility: hidden;
+  }
+
+  .email-row--unread .unread-dot {
+    visibility: visible;
+  }
+
+  .email-link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    text-decoration: none;
+    color: inherit;
+    overflow: hidden;
+  }
+
+  .email-sender {
+    flex-shrink: 0;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .email-subject {
+    flex-shrink: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+  }
+
+  .email-snippet {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+  }
+
+  .chip {
+    flex-shrink: 0;
+  }
+
+  .email-meta {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 96px;
+  }
+
+  .email-date {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+  }
+
+  .email-actions {
+    display: none;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .email-row:hover .email-date {
+    display: none;
+  }
+
+  .email-row:hover .email-actions {
+    display: flex;
+  }
+
+  .action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    border: none;
+    background: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+
+  .action-btn:hover {
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text);
+  }
+</style>

@@ -50,6 +50,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recent
         isRead={email.is_read}
         category={email.category}
         isImportant={email.is_important}
+        isStarred={email.is_starred}
         compact
       />
     ))}
@@ -63,10 +64,16 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recent
 
   <script>
     import Pusher from "pusher-js";
-    import { buildEmailCardElement } from "../lib/emailCardHtml";
+    import { buildEmailRowElement } from "../lib/emailCardHtml";
+    import { initEmailList } from "../lib/emailListClient";
 
     const statusEl = document.getElementById("connection-status")!;
     const listEl = document.getElementById("email-list")!;
+
+    initEmailList(listEl);
+
+    const importantRowEl = document.getElementById("important-email-row");
+    if (importantRowEl) initEmailList(importantRowEl);
 
     const pusher = new Pusher(import.meta.env.PUBLIC_PUSHER_KEY, {
       cluster: import.meta.env.PUBLIC_PUSHER_CLUSTER,
@@ -96,8 +103,9 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recent
         received_at: string;
         category?: string;
         is_important?: boolean;
+        is_starred?: boolean;
       }) => {
-        listEl.prepend(buildEmailCardElement(data));
+        listEl.prepend(buildEmailRowElement(data));
       },
     );
   </script>

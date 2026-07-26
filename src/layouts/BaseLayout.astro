@@ -24,6 +24,12 @@ const { title, description, image, noIndex } = Astro.props;
 <!doctype html>
 <html lang="zh-TW">
   <head>
+    <script is:inline>
+      (function () {
+        var stored = localStorage.getItem("theme");
+        document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
+      })();
+    </script>
     <BaseHead
       title={title}
       description={description}

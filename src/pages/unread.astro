@@ -35,7 +35,7 @@ const heading = category ? `未讀郵件 · ${badge?.label ?? category}` : "未�
 <SidebarLayout title={`${heading} — Gmail 即時監控面板`} activeView="unread" activeCategory={category ?? null}>
   <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
 
-  <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+  <div id="email-list" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
     {emails.map((email) => (
       <EmailCard
         id={email.id}
@@ -46,6 +46,7 @@ const heading = category ? `未讀郵件 · ${badge?.label ?? category}` : "未�
         isRead={email.is_read}
         category={email.category}
         isImportant={email.is_important}
+        isStarred={email.is_starred}
       />
     ))}
 
@@ -62,4 +63,9 @@ const heading = category ? `未讀郵件 · ${badge?.label ?? category}` : "未�
     ) : <span />}
     {hasMore && <a href={pageHref(page + 1)} class="btn btn-outline">下一頁</a>}
   </div>
+
+  <script>
+    import { initEmailList } from "../lib/emailListClient";
+    initEmailList(document.getElementById("email-list")!);
+  </script>
 </SidebarLayout>

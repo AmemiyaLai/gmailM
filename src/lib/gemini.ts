@@ -9,7 +9,7 @@ function getClient(): GoogleGenAI {
   return client;
 }
 
-const MODEL = import.meta.env.GEMINI_MODEL || "gemini-2.5-flash";
+const MODEL = import.meta.env.GEMINI_MODEL || "gemini-flash-latest";
 
 export interface UnreadEmailInput {
   sender: string;

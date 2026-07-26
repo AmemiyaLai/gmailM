@@ -38,7 +38,7 @@ const heading = important ? "重要郵件" : category ? `分類：${badge?.label
 >
   <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
 
-  <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+  <div id="email-list" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
     {emails.map((email) => (
       <EmailCard
         id={email.id}
@@ -49,6 +49,7 @@ const heading = important ? "重要郵件" : category ? `分類：${badge?.label
         isRead={email.is_read}
         category={email.category}
         isImportant={email.is_important}
+        isStarred={email.is_starred}
       />
     ))}
 
@@ -65,4 +66,9 @@ const heading = important ? "重要郵件" : category ? `分類：${badge?.label
     ) : <span />}
     {hasMore && <a href={pageHref(page + 1)} class="btn btn-outline">下一頁</a>}
   </div>
+
+  <script>
+    import { initEmailList } from "../../lib/emailListClient";
+    initEmailList(document.getElementById("email-list")!);
+  </script>
 </SidebarLayout>

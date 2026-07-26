@@ -156,6 +156,36 @@ export async function markAsRead(messageId: string): Promise<void> {
   });
 }
 
+export async function setStarred(messageId: string, starred: boolean): Promise<void> {
+  const gmail = getGmailClient();
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: starred
+      ? { addLabelIds: ["STARRED"] }
+      : { removeLabelIds: ["STARRED"] },
+  });
+}
+
+export async function archiveMessage(messageId: string): Promise<void> {
+  const gmail = getGmailClient();
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: messageId,
+    requestBody: {
+      removeLabelIds: ["INBOX"],
+    },
+  });
+}
+
+export async function trashMessage(messageId: string): Promise<void> {
+  const gmail = getGmailClient();
+  await gmail.users.messages.trash({
+    userId: "me",
+    id: messageId,
+  });
+}
+
 export async function startWatch(): Promise<{
   historyId: string;
   expiration: string;

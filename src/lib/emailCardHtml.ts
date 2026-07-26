@@ -8,51 +8,64 @@ export interface NewEmailData {
   received_at: string;
   category?: string | null;
   is_important?: boolean;
+  is_starred?: boolean;
 }
 
-export function renderEmailCardHtml(data: NewEmailData): string {
+export function renderEmailRowHtml(data: NewEmailData): string {
   const badge = categoryBadge(data.category ?? null);
+  const isStarred = Boolean(data.is_starred);
+  const formattedDate = new Date(data.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
 
   return `
-    <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
-      <div style="min-width:0; flex:1;">
-        <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
-          <span class="unread-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0;"></span>
-          <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            ${data.sender}
-          </strong>
-          ${badge ? `<span class="badge" style="background:${badge.bg}; color:${badge.color}; flex-shrink:0;">${badge.label}</span>` : ""}
-          ${data.is_important ? `<span title="重要郵件" style="flex-shrink:0;">⭐</span>` : ""}
-        </div>
-        <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-          ${data.subject || "(無主旨)"}
-        </div>
-        <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-          ${data.snippet}
-        </div>
+    <input type="checkbox" class="email-checkbox" aria-label="選取郵件" />
+
+    <button type="button" class="star-btn" aria-label="加星號" aria-pressed="${isStarred ? "true" : "false"}">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="${isStarred ? "var(--color-warning)" : "none"}" stroke="var(--color-text-tertiary)" stroke-width="1.5">
+        <polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" />
+      </svg>
+    </button>
+
+    <a href="/emails/${encodeURIComponent(data.id)}" class="email-link">
+      <span class="unread-dot"></span>
+      <span class="email-sender">${data.sender}</span>
+      <span class="email-subject">${data.subject || "(無主旨)"}</span>
+      <span class="email-snippet">— ${data.snippet}</span>
+      ${badge ? `<span class="badge chip" style="background:${badge.bg}; color:${badge.color};">${badge.label}</span>` : ""}
+    </a>
+
+    <div class="email-meta">
+      <time class="email-date" datetime="${data.received_at}">${formattedDate}</time>
+      <div class="email-actions">
+        <button type="button" class="action-btn" data-action="read" title="標示為已讀">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8l9 6 9-6M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" />
+          </svg>
+        </button>
+        <button type="button" class="action-btn" data-action="archive" title="封存">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="4" rx="1" />
+            <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4" />
+          </svg>
+        </button>
+        <button type="button" class="action-btn" data-action="trash" title="刪除">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+          </svg>
+        </button>
       </div>
-      <time
-        datetime="${data.received_at}"
-        style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
-      >
-        ${new Date(data.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
-      </time>
     </div>
   `;
 }
 
-export function buildEmailCardElement(data: NewEmailData): HTMLAnchorElement {
-  const link = document.createElement("a");
-  link.href = `/emails/${encodeURIComponent(data.id)}`;
-  link.className = "card email-card";
-  link.dataset.id = data.id;
-  link.dataset.read = "false";
-  link.style.display = "block";
-  link.style.textDecoration = "none";
-  link.style.color = "inherit";
+export function buildEmailRowElement(data: NewEmailData): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "email-row email-row--unread";
+  row.dataset.id = data.id;
+  row.dataset.read = "false";
+  row.dataset.starred = data.is_starred ? "true" : "false";
   if (data.is_important) {
-    link.style.borderLeft = "3px solid var(--color-error)";
+    row.classList.add("email-row--important");
   }
-  link.innerHTML = renderEmailCardHtml(data);
-  return link;
+  row.innerHTML = renderEmailRowHtml(data);
+  return row;
 }

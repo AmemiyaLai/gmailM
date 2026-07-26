@@ -13,13 +13,23 @@ const { activeView = null, activeCategory = null } = Astro.props;
 <aside class="app-sidebar">
   <nav class="sidebar-nav">
     <div class="sidebar-section">
-      <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]}>儀表板</a>
-      <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]}>全部郵件</a>
-      <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]}>未讀郵件</a>
+      <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></svg>
+        儀表板
+      </a>
+      <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" /><path d="M4 8h16M8 8v12" /></svg>
+        全部郵件
+      </a>
+      <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" /><path d="m4 4 8 8 8-8" /></svg>
+        未讀郵件
+      </a>
       <a
         href="/emails?important=1"
         class:list={["sidebar-link", { active: activeView === "important" }]}
       >
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" /></svg>
         重要郵件
       </a>
     </div>
@@ -41,8 +51,14 @@ const { activeView = null, activeCategory = null } = Astro.props;
     </div>
 
     <div class="sidebar-section">
-      <a href="/search" class:list={["sidebar-link", { active: activeView === "search" }]}>搜尋</a>
-      <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>摘要記錄</a>
+      <a href="/search" class:list={["sidebar-link", { active: activeView === "search" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        搜尋
+      </a>
+      <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>
+        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+        摘要記錄
+      </a>
     </div>
   </nav>
 </aside>
@@ -90,6 +106,13 @@ const { activeView = null, activeCategory = null } = Astro.props;
     background-color: var(--color-primary-muted);
     color: var(--color-primary-hover);
     font-weight: var(--font-weight-medium);
+  }
+
+  .sidebar-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.8;
   }
 
   .sidebar-dot {

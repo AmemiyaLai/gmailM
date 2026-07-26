@@ -13,6 +13,7 @@ interface EmailResult {
   is_read: boolean;
   category: string | null;
   is_important?: boolean;
+  labels: string[] | null;
 }
 
 const q = Astro.url.searchParams.get("q")?.trim() ?? "";
@@ -23,7 +24,7 @@ const to = Astro.url.searchParams.get("to")?.trim() ?? "";
 const supabase = getSupabase();
 let query = supabase
   .from("emails" as never)
-  .select("id, sender, subject, snippet, received_at, is_read, category, is_important")
+  .select("id, sender, subject, snippet, received_at, is_read, category, is_important, labels")
   .order("received_at", { ascending: false })
   .limit(50);
 
@@ -53,7 +54,7 @@ const emails = (data ?? []) as EmailResult[];
         name="q"
         value={q}
         placeholder="搜尋寄件者 / 主旨 / 內文摘要"
-        style="flex:1; min-width:200px; padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
+        style="flex:1; min-width:200px; padding:var(--space-3) var(--space-5); border-radius:var(--radius-full); border:1px solid var(--color-border); background:var(--color-bg-secondary); color:var(--color-text);"
       />
       <select
         name="category"
@@ -85,7 +86,7 @@ const emails = (data ?? []) as EmailResult[];
       </div>
     )}
 
-    <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+    <div id="email-list" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
       {emails.map((email) => (
         <EmailCard
           id={email.id}
@@ -96,6 +97,7 @@ const emails = (data ?? []) as EmailResult[];
           isRead={email.is_read}
           category={email.category}
           isImportant={email.is_important}
+          isStarred={(email.labels ?? []).includes("STARRED")}
         />
       ))}
 
@@ -105,4 +107,9 @@ const emails = (data ?? []) as EmailResult[];
         </div>
       )}
     </div>
+
+    <script>
+      import { initEmailList } from "../lib/emailListClient";
+      initEmailList(document.getElementById("email-list")!);
+    </script>
 </SidebarLayout>

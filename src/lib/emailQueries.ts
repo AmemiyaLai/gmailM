@@ -16,6 +16,7 @@ export interface EmailPreview {
   is_read: boolean;
   category: string | null;
   is_important?: boolean;
+  is_starred: boolean;
 }
 
 export interface SummaryRow {
@@ -27,7 +28,28 @@ export interface SummaryRow {
   created_at: string;
 }
 
-const PREVIEW_COLUMNS = "id, sender, subject, snippet, received_at, is_read, category, is_important";
+interface EmailPreviewRow {
+  id: string;
+  sender: string;
+  subject: string;
+  snippet: string;
+  received_at: string;
+  is_read: boolean;
+  category: string | null;
+  is_important?: boolean;
+  labels: string[] | null;
+}
+
+const PREVIEW_COLUMNS = "id, sender, subject, snippet, received_at, is_read, category, is_important, labels";
+
+function toEmailPreview(row: EmailPreviewRow): EmailPreview {
+  const { labels, ...rest } = row;
+  return { ...rest, is_starred: (labels ?? []).includes("STARRED") };
+}
+
+function toEmailPreviews(rows: EmailPreviewRow[]): EmailPreview[] {
+  return rows.map(toEmailPreview);
+}
 
 function startOfTodayTaipei(): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -83,7 +105,7 @@ export async function getRecentUnread(limit = 10): Promise<EmailPreview[]> {
     .eq("is_read", false)
     .order("received_at", { ascending: false })
     .limit(limit);
-  return (data ?? []) as EmailPreview[];
+  return toEmailPreviews((data ?? []) as EmailPreviewRow[]);
 }
 
 export async function getImportantEmails(limit = 5): Promise<EmailPreview[]> {
@@ -94,7 +116,7 @@ export async function getImportantEmails(limit = 5): Promise<EmailPreview[]> {
     .eq("is_important", true)
     .order("received_at", { ascending: false })
     .limit(limit);
-  return (data ?? []) as EmailPreview[];
+  return toEmailPreviews((data ?? []) as EmailPreviewRow[]);
 }
 
 export async function getLatestSummary(): Promise<SummaryRow | null> {
@@ -142,7 +164,7 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
   }
 
   const { data } = await query;
-  const rows = (data ?? []) as EmailPreview[];
+  const rows = toEmailPreviews((data ?? []) as EmailPreviewRow[]);
   const hasMore = rows.length > limit;
   return { emails: rows.slice(0, limit), hasMore };
 }

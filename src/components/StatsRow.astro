@@ -26,7 +26,7 @@ const { unreadCount, todayCount, categoryCounts, importantEmails } = Astro.props
   {importantEmails.length > 0 && (
     <div style="margin-top:var(--space-6);">
       <h2 style="font-size:var(--font-size-md); margin-bottom:var(--space-3);">⭐ 重要郵件</h2>
-      <div class="important-row">
+      <div id="important-email-row" class="important-row">
         {importantEmails.map((email) => (
           <ImportantEmailCard email={email} />
         ))}

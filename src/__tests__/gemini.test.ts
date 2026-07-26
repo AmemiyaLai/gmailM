@@ -8,7 +8,7 @@ vi.mock("@google/genai", () => ({
   },
 }));
 
-import { summarizeUnreadEmails, judgeEmailImportance } from "../lib/gemini";
+import { summarizeUnreadEmails, judgeEmailImportance, judgeSenderTag } from "../lib/gemini";
 
 describe("summarizeUnreadEmails()", () => {
   beforeEach(() => {
@@ -99,5 +99,108 @@ describe("judgeEmailImportance()", () => {
     await expect(
       judgeEmailImportance({ sender: "a@example.com", subject: "s", snippet: "n" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("judgeSenderTag()", () => {
+  beforeEach(() => {
+    generateContentMock.mockReset();
+  });
+
+  it("應正確解析有效標籤的 JSON 回應", async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({ tag: "banking", confidence: 0.92 }),
+    });
+
+    const result = await judgeSenderTag({
+      sender: "esun@esun.com",
+      subject: "帳戶通知",
+      snippet: "您的帳戶",
+    });
+
+    expect(result).toEqual({ tag: "banking", confidence: 0.92 });
+  });
+
+  it("應解析 development 標籤", async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({ tag: "development", confidence: 0.88 }),
+    });
+
+    const result = await judgeSenderTag({
+      sender: "ci@unknown.com",
+      subject: "Build succeeded",
+      snippet: "Pipeline passed",
+    });
+
+    expect(result.tag).toBe("development");
+    expect(result.confidence).toBe(0.88);
+  });
+
+  it("Gemini 回傳無效 tag 時應回傳 other", async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({ tag: "invalid_tag", confidence: 0.5 }),
+    });
+
+    const result = await judgeSenderTag({
+      sender: "x@y.com",
+      subject: "s",
+      snippet: "n",
+    });
+
+    expect(result.tag).toBe("invalid_tag");
+  });
+
+  it("Gemini 回傳非數字 confidence 時應回傳 0", async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({ tag: "media", confidence: "high" }),
+    });
+
+    const result = await judgeSenderTag({
+      sender: "x@y.com",
+      subject: "s",
+      snippet: "n",
+    });
+
+    expect(result.tag).toBe("media");
+    expect(result.confidence).toBe(0);
+  });
+
+  it("Gemini 回傳空物件時應回傳 other + 0", async () => {
+    generateContentMock.mockResolvedValue({ text: "{}" });
+
+    const result = await judgeSenderTag({
+      sender: "x@y.com",
+      subject: "s",
+      snippet: "n",
+    });
+
+    expect(result.tag).toBe("other");
+    expect(result.confidence).toBe(0);
+  });
+
+  it("Gemini API 失敗時應向外拋出錯誤", async () => {
+    generateContentMock.mockRejectedValue(new Error("quota exceeded"));
+
+    await expect(
+      judgeSenderTag({ sender: "x@y.com", subject: "s", snippet: "n" }),
+    ).rejects.toThrow("quota exceeded");
+  });
+
+  it("應使用 JSON responseMimeType 模式", async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({ tag: "commerce", confidence: 0.85 }),
+    });
+
+    await judgeSenderTag({
+      sender: "shop@shopee.com",
+      subject: "訂單",
+      snippet: "已出貨",
+    });
+
+    expect(generateContentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: { responseMimeType: "application/json" },
+      }),
+    );
   });
 });

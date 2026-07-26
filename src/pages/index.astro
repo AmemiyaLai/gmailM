@@ -1,6 +1,7 @@
 ---
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
+import FilterBar from "../components/FilterBar.astro";
 import SummaryPanel from "../components/SummaryPanel.astro";
 import StatsRow from "../components/StatsRow.astro";
 import {
@@ -9,17 +10,29 @@ import {
   getTodayCount,
   getCategoryCounts,
   getImportantEmails,
-  getRecentUnread,
+  listEmails,
 } from "../lib/emailQueries";
+import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
 
-const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recentUnread] = await Promise.all([
-  getLatestSummary(),
-  getUnreadCount(),
-  getTodayCount(),
-  getCategoryCounts(),
-  getImportantEmails(5),
-  getRecentUnread(10),
-]);
+const filters = parseEmailFilterParams(Astro.url);
+
+const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emails: recentUnread }] =
+  await Promise.all([
+    getLatestSummary(),
+    getUnreadCount(),
+    getTodayCount(),
+    getCategoryCounts(),
+    getImportantEmails(5),
+    listEmails({
+      category: filters.category,
+      sender: filters.sender,
+      recipient: filters.recipient,
+      from: filters.from,
+      to: filters.to,
+      onlyUnread: true,
+      limit: 10,
+    }),
+  ]);
 ---
 
 <SidebarLayout title="Gmail 即時監控面板" activeView="home">
@@ -34,10 +47,20 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recent
 
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3);">
     <h2 style="font-size:var(--font-size-md);">最近未讀郵件</h2>
-    <a href="/unread" style="font-size:var(--font-size-sm); color:var(--color-primary-hover);">
+    <a href={buildFilterHref("/unread", filters)} style="font-size:var(--font-size-sm); color:var(--color-primary-hover);">
       查看全部未讀 →
     </a>
   </div>
+
+  <FilterBar
+    action="/"
+    category={filters.category}
+    sender={filters.sender}
+    recipient={filters.recipient}
+    from={filters.from}
+    to={filters.to}
+    showUnreadToggle={false}
+  />
 
   <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
     {recentUnread.map((email) => (

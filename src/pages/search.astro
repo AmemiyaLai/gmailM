@@ -1,8 +1,9 @@
 ---
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
+import FilterBar from "../components/FilterBar.astro";
 import { getSupabase } from "../lib/supabase";
-import { categories } from "../lib/classify";
+import { parseEmailFilterParams } from "../lib/emailFilters";
 
 interface EmailResult {
   id: string;
@@ -16,10 +17,7 @@ interface EmailResult {
   labels: string[] | null;
 }
 
-const q = Astro.url.searchParams.get("q")?.trim() ?? "";
-const category = Astro.url.searchParams.get("category")?.trim() ?? "";
-const from = Astro.url.searchParams.get("from")?.trim() ?? "";
-const to = Astro.url.searchParams.get("to")?.trim() ?? "";
+const filters = parseEmailFilterParams(Astro.url);
 
 const supabase = getSupabase();
 let query = supabase
@@ -28,17 +26,26 @@ let query = supabase
   .order("received_at", { ascending: false })
   .limit(50);
 
-if (q) {
-  query = query.textSearch("search_vector", q, { type: "plain", config: "simple" });
+if (filters.q) {
+  query = query.textSearch("search_vector", filters.q, { type: "plain", config: "simple" });
 }
-if (category) {
-  query = query.eq("category", category);
+if (filters.category) {
+  query = query.eq("category", filters.category);
 }
-if (from) {
-  query = query.gte("received_at", new Date(from).toISOString());
+if (filters.from) {
+  query = query.gte("received_at", new Date(filters.from).toISOString());
 }
-if (to) {
-  query = query.lte("received_at", new Date(to).toISOString());
+if (filters.to) {
+  query = query.lte("received_at", new Date(filters.to).toISOString());
+}
+if (filters.sender) {
+  query = query.ilike("sender", `%${filters.sender}%`);
+}
+if (filters.recipient) {
+  query = query.ilike("recipient", `%${filters.recipient}%`);
+}
+if (filters.unread) {
+  query = query.eq("is_read", false);
 }
 
 const { data, error } = await query;
@@ -48,37 +55,17 @@ const emails = (data ?? []) as EmailResult[];
 <SidebarLayout title="搜尋 — Gmail 即時監控面板" showSearch={false} activeView="search">
     <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">搜尋郵件</h1>
 
-    <form method="get" style="display:flex; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-8);">
-      <input
-        type="text"
-        name="q"
-        value={q}
-        placeholder="搜尋寄件者 / 主旨 / 內文摘要"
-        style="flex:1; min-width:200px; padding:var(--space-3) var(--space-5); border-radius:var(--radius-full); border:1px solid var(--color-border); background:var(--color-bg-secondary); color:var(--color-text);"
-      />
-      <select
-        name="category"
-        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
-      >
-        <option value="">全部分類</option>
-        {categories.map((c) => (
-          <option value={c} selected={c === category}>{c}</option>
-        ))}
-      </select>
-      <input
-        type="date"
-        name="from"
-        value={from}
-        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
-      />
-      <input
-        type="date"
-        name="to"
-        value={to}
-        style="padding:var(--space-3); border-radius:var(--radius-md); border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text);"
-      />
-      <button type="submit" class="btn btn-primary">搜尋</button>
-    </form>
+    <FilterBar
+      action="/search"
+      showQ
+      q={filters.q}
+      category={filters.category}
+      sender={filters.sender}
+      recipient={filters.recipient}
+      from={filters.from}
+      to={filters.to}
+      unread={filters.unread}
+    />
 
     {error && (
       <div style="color:var(--color-error); margin-bottom:var(--space-4);">

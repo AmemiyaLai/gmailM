@@ -97,17 +97,6 @@ export async function getCategoryCounts(): Promise<{ category: string; count: nu
   return results;
 }
 
-export async function getRecentUnread(limit = 10): Promise<EmailPreview[]> {
-  const supabase = getSupabase();
-  const { data } = await supabase
-    .from("emails" as never)
-    .select(PREVIEW_COLUMNS)
-    .eq("is_read", false)
-    .order("received_at", { ascending: false })
-    .limit(limit);
-  return toEmailPreviews((data ?? []) as EmailPreviewRow[]);
-}
-
 export async function getImportantEmails(limit = 5): Promise<EmailPreview[]> {
   const supabase = getSupabase();
   const { data } = await supabase
@@ -132,6 +121,10 @@ export async function getLatestSummary(): Promise<SummaryRow | null> {
 
 export interface ListEmailsOptions {
   category?: string;
+  sender?: string;
+  recipient?: string;
+  from?: string;
+  to?: string;
   onlyUnread?: boolean;
   onlyImportant?: boolean;
   limit?: number;
@@ -144,7 +137,17 @@ export interface ListEmailsResult {
 }
 
 export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmailsResult> {
-  const { category, onlyUnread = false, onlyImportant = false, limit = 50, offset = 0 } = opts;
+  const {
+    category,
+    sender,
+    recipient,
+    from,
+    to,
+    onlyUnread = false,
+    onlyImportant = false,
+    limit = 50,
+    offset = 0,
+  } = opts;
   const supabase = getSupabase();
 
   let query = supabase
@@ -161,6 +164,18 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
   }
   if (onlyImportant) {
     query = query.eq("is_important", true);
+  }
+  if (sender) {
+    query = query.ilike("sender", `%${sender}%`);
+  }
+  if (recipient) {
+    query = query.ilike("recipient", `%${recipient}%`);
+  }
+  if (from) {
+    query = query.gte("received_at", new Date(from).toISOString());
+  }
+  if (to) {
+    query = query.lte("received_at", new Date(to).toISOString());
   }
 
   const { data } = await query;

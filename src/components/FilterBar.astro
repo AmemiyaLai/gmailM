@@ -1,0 +1,219 @@
+---
+import { categories } from "../lib/classify";
+
+export interface Props {
+  action: string;
+  showQ?: boolean;
+  q?: string;
+  category?: string;
+  sender?: string;
+  recipient?: string;
+  from?: string;
+  to?: string;
+  showUnreadToggle?: boolean;
+  unread?: boolean;
+  important?: boolean;
+}
+
+const {
+  action,
+  showQ = false,
+  q = "",
+  category = "",
+  sender = "",
+  recipient = "",
+  from = "",
+  to = "",
+  showUnreadToggle = true,
+  unread = false,
+  important = false,
+} = Astro.props;
+
+const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` : to ? `${to} 前` : "不限時間";
+---
+
+<form method="get" action={action} class="filter-bar">
+  {showQ && (
+    <input
+      type="text"
+      name="q"
+      value={q}
+      placeholder="搜尋寄件者 / 主旨 / 內文摘要"
+      class="search-input"
+    />
+  )}
+
+  {important && <input type="hidden" name="important" value="1" />}
+
+  <div class="filter-row">
+    <div class="filter-chip">
+      <button type="button" class="chip-trigger" data-chip="sender">
+        {sender || "寄件者"}
+      </button>
+      <div class="chip-popover" data-popover="sender">
+        <input type="text" name="sender" value={sender} placeholder="寄件者關鍵字" />
+      </div>
+    </div>
+
+    <div class="filter-chip">
+      <button type="button" class="chip-trigger" data-chip="range">
+        {dateRangeLabel}
+      </button>
+      <div class="chip-popover" data-popover="range">
+        <label class="chip-field-label">起始日期</label>
+        <input type="date" name="from" value={from} />
+        <label class="chip-field-label">結束日期</label>
+        <input type="date" name="to" value={to} />
+      </div>
+    </div>
+
+    <div class="filter-chip">
+      <button type="button" class="chip-trigger" data-chip="recipient">
+        {recipient || "收件者"}
+      </button>
+      <div class="chip-popover" data-popover="recipient">
+        <input type="text" name="recipient" value={recipient} placeholder="收件者關鍵字" />
+      </div>
+    </div>
+
+    {showUnreadToggle && (
+      <label class="chip-toggle" data-chip-toggle>
+        <input type="checkbox" name="unread" value="1" checked={unread} class="sr-only" />
+        未讀郵件
+      </label>
+    )}
+
+    <select name="category" class="chip-select">
+      <option value="">全部分類</option>
+      {categories.map((c) => (
+        <option value={c} selected={c === category}>{c}</option>
+      ))}
+    </select>
+
+    <button type="submit" class="btn btn-primary">篩選</button>
+  </div>
+</form>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>(".filter-bar").forEach((form) => {
+    function closeAllPopovers(except?: HTMLElement) {
+      form.querySelectorAll<HTMLElement>(".chip-popover").forEach((popover) => {
+        if (popover !== except) popover.classList.remove("chip-popover--open");
+      });
+    }
+
+    form.querySelectorAll<HTMLButtonElement>(".chip-trigger").forEach((trigger) => {
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const name = trigger.dataset.chip;
+        const popover = form.querySelector<HTMLElement>(`[data-popover="${name}"]`);
+        if (!popover) return;
+        const isOpen = popover.classList.contains("chip-popover--open");
+        closeAllPopovers();
+        if (!isOpen) popover.classList.add("chip-popover--open");
+      });
+    });
+
+    form.querySelectorAll(".chip-popover").forEach((popover) => {
+      popover.addEventListener("click", (e) => e.stopPropagation());
+    });
+
+    document.addEventListener("click", () => closeAllPopovers());
+
+    const toggle = form.querySelector<HTMLLabelElement>("[data-chip-toggle]");
+    if (toggle) {
+      const toggleInput = toggle.querySelector("input")!;
+      const syncToggle = () => toggle.classList.toggle("chip-toggle--active", toggleInput.checked);
+      toggleInput.addEventListener("change", syncToggle);
+      syncToggle();
+    }
+  });
+</script>
+
+<style>
+  .filter-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
+  }
+
+  .search-input {
+    width: 100%;
+    padding: var(--space-3) var(--space-5);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-secondary);
+    color: var(--color-text);
+  }
+
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .filter-chip {
+    position: relative;
+  }
+
+  .chip-trigger,
+  .chip-toggle,
+  .chip-select {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .chip-toggle {
+    user-select: none;
+  }
+
+  .chip-toggle--active {
+    background: var(--color-primary-muted);
+    border-color: var(--color-primary);
+    color: var(--color-primary-hover);
+  }
+
+  .chip-popover {
+    display: none;
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    z-index: 10;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    min-width: 220px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+
+  .chip-popover--open {
+    display: flex;
+  }
+
+  .chip-popover input {
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+
+  .chip-field-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+  }
+</style>

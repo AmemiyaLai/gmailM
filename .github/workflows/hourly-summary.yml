@@ -1,0 +1,16 @@
+name: Hourly Email Summary
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call hourly-summary API
+        run: |
+          curl -sf -w "\nHTTP_STATUS:%{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://gmailm.autodesignlab.org/api/gmail/hourly-summary"

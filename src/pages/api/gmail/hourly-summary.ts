@@ -62,6 +62,20 @@ export const GET: APIRoute = async ({ request }) => {
   const periodStart = new Date(unread[0].received_at);
   const periodEnd = new Date(unread[unread.length - 1].received_at);
 
+  const { data: lastSummary } = (await supabase
+    .from("email_summaries" as never)
+    .select("period_end")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()) as { data: { period_end: string } | null };
+
+  if (lastSummary && periodEnd.getTime() <= new Date(lastSummary.period_end).getTime()) {
+    return new Response(
+      JSON.stringify({ status: "skipped", reason: "no new unread emails since last summary" }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   try {
     const summaryText = await summarizeUnreadEmails(
       unread.map((e) => ({

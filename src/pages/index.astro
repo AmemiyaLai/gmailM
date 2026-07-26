@@ -1,93 +1,69 @@
 ---
-import BaseLayout from "../layouts/BaseLayout.astro";
-import Header from "../components/Header.astro";
-import { getSupabase } from "../lib/supabase";
-import { categoryBadge } from "../lib/categoryBadge";
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import EmailCard from "../components/EmailCard.astro";
+import SummaryPanel from "../components/SummaryPanel.astro";
+import StatsRow from "../components/StatsRow.astro";
+import {
+  getLatestSummary,
+  getUnreadCount,
+  getTodayCount,
+  getCategoryCounts,
+  getImportantEmails,
+  getRecentUnread,
+} from "../lib/emailQueries";
 
-interface EmailPreview {
-  id: string;
-  sender: string;
-  subject: string;
-  snippet: string;
-  received_at: string;
-  is_read: boolean;
-  category: string | null;
-}
-
-const supabase = getSupabase();
-const { data } = await supabase
-  .from("emails" as never)
-  .select("id, sender, subject, snippet, received_at, is_read, category")
-  .order("received_at", { ascending: false })
-  .limit(20);
-const emails = (data ?? []) as EmailPreview[];
+const [summary, unreadCount, todayCount, categoryCounts, importantEmails, recentUnread] = await Promise.all([
+  getLatestSummary(),
+  getUnreadCount(),
+  getTodayCount(),
+  getCategoryCounts(),
+  getImportantEmails(5),
+  getRecentUnread(10),
+]);
 ---
 
-<BaseLayout title="Gmail 即時監控面板">
-  <Header />
-  <main class="container" style="padding: var(--space-6) 0 var(--space-12) 0;">
+<SidebarLayout title="Gmail 即時監控面板" activeView="home">
+  <SummaryPanel summary={summary} />
 
-    <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
-      {emails.map((email) => {
-        const badge = categoryBadge(email.category);
-        return (
-          <a
-            href={`/emails/${email.id}`}
-            class="card email-card"
-            data-id={email.id}
-            data-read={email.is_read ? "true" : "false"}
-            style={`opacity: ${email.is_read ? 0.6 : 1}; display:block; text-decoration:none; color:inherit;`}
-          >
-            <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
-              <div style="min-width:0; flex:1;">
-                <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
-                  <span
-                    class="unread-dot"
-                    style={`width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0; visibility:${email.is_read ? "hidden" : "visible"};`}
-                  ></span>
-                  <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                    {email.sender}
-                  </strong>
-                  {badge && (
-                    <span class="badge" style={`background:${badge.bg}; color:${badge.color}; flex-shrink:0;`}>
-                      {badge.label}
-                    </span>
-                  )}
-                </div>
-                <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                  {email.subject || "(無主旨)"}
-                </div>
-                <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                  {email.snippet}
-                </div>
-              </div>
-              <time
-                datetime={email.received_at}
-                style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
-              >
-                {new Date(email.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
-              </time>
-            </div>
-          </a>
-        );
-      })}
+  <StatsRow
+    unreadCount={unreadCount}
+    todayCount={todayCount}
+    categoryCounts={categoryCounts}
+    importantEmails={importantEmails}
+  />
 
-      {emails.length === 0 && (
-        <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
-          尚無郵件資料。部署並啟動 watch 後，新信件將即時出現在這裡。
-        </div>
-      )}
-    </div>
-  </main>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3);">
+    <h2 style="font-size:var(--font-size-md);">最近未讀郵件</h2>
+    <a href="/unread" style="font-size:var(--font-size-sm); color:var(--color-primary-hover);">
+      查看全部未讀 →
+    </a>
+  </div>
+
+  <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
+    {recentUnread.map((email) => (
+      <EmailCard
+        id={email.id}
+        sender={email.sender}
+        subject={email.subject}
+        snippet={email.snippet}
+        receivedAt={email.received_at}
+        isRead={email.is_read}
+        category={email.category}
+        isImportant={email.is_important}
+        compact
+      />
+    ))}
+
+    {recentUnread.length === 0 && (
+      <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
+        目前沒有未讀郵件。
+      </div>
+    )}
+  </div>
 
   <script>
     import Pusher from "pusher-js";
-
-    const CATEGORY_BADGES: Record<string, { label: string; bg: string; color: string }> = {
-      devlog: { label: "開發日誌", bg: "var(--color-info)", color: "white" },
-      newsletter: { label: "電子報", bg: "var(--color-primary-muted)", color: "var(--color-primary-hover)" },
-      system: { label: "系統通知", bg: "var(--color-warning)", color: "white" },
-    };
+    import { buildEmailCardElement } from "../lib/emailCardHtml";
 
     const statusEl = document.getElementById("connection-status")!;
     const listEl = document.getElementById("email-list")!;
@@ -119,45 +95,10 @@ const emails = (data ?? []) as EmailPreview[];
         snippet: string;
         received_at: string;
         category?: string;
+        is_important?: boolean;
       }) => {
-        const badge = data.category ? CATEGORY_BADGES[data.category] : null;
-
-        const link = document.createElement("a");
-        link.href = `/emails/${encodeURIComponent(data.id)}`;
-        link.className = "card email-card";
-        link.dataset.id = data.id;
-        link.dataset.read = "false";
-        link.style.display = "block";
-        link.style.textDecoration = "none";
-        link.style.color = "inherit";
-        link.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:start; gap:var(--space-4);">
-            <div style="min-width:0; flex:1;">
-              <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-1);">
-                <span class="unread-dot" style="width:8px; height:8px; border-radius:50%; background:var(--color-primary); flex-shrink:0;"></span>
-                <strong style="color:var(--color-text); font-size:var(--font-size-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                  ${data.sender}
-                </strong>
-                ${badge ? `<span class="badge" style="background:${badge.bg}; color:${badge.color}; flex-shrink:0;">${badge.label}</span>` : ""}
-              </div>
-              <div style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium); margin-bottom:var(--space-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                ${data.subject || "(無主旨)"}
-              </div>
-              <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                ${data.snippet}
-              </div>
-            </div>
-            <time
-              datetime="${data.received_at}"
-              style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap; flex-shrink:0;"
-            >
-              ${new Date(data.received_at).toLocaleDateString("zh-TW", { month: "short", day: "numeric" })}
-            </time>
-          </div>
-        `;
-
-        listEl.prepend(link);
+        listEl.prepend(buildEmailCardElement(data));
       },
     );
   </script>
-</BaseLayout>
+</SidebarLayout>

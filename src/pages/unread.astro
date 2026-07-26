@@ -1,0 +1,65 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import EmailCard from "../components/EmailCard.astro";
+import { listEmails } from "../lib/emailQueries";
+import { categoryBadge } from "../lib/categoryBadge";
+
+const PAGE_SIZE = 50;
+
+const category = Astro.url.searchParams.get("category")?.trim() || undefined;
+const important = Astro.url.searchParams.get("important") === "1";
+const page = Math.max(1, Number(Astro.url.searchParams.get("page") ?? "1") || 1);
+const offset = (page - 1) * PAGE_SIZE;
+
+const { emails, hasMore } = await listEmails({
+  category,
+  onlyUnread: true,
+  onlyImportant: important,
+  limit: PAGE_SIZE,
+  offset,
+});
+
+function pageHref(targetPage: number): string {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (important) params.set("important", "1");
+  if (targetPage > 1) params.set("page", String(targetPage));
+  const qs = params.toString();
+  return qs ? `/unread?${qs}` : "/unread";
+}
+
+const badge = category ? categoryBadge(category) : null;
+const heading = category ? `未讀郵件 · ${badge?.label ?? category}` : "未讀郵件";
+---
+
+<SidebarLayout title={`${heading} — Gmail 即時監控面板`} activeView="unread" activeCategory={category ?? null}>
+  <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
+
+  <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+    {emails.map((email) => (
+      <EmailCard
+        id={email.id}
+        sender={email.sender}
+        subject={email.subject}
+        snippet={email.snippet}
+        receivedAt={email.received_at}
+        isRead={email.is_read}
+        category={email.category}
+        isImportant={email.is_important}
+      />
+    ))}
+
+    {emails.length === 0 && (
+      <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
+        目前沒有未讀郵件。
+      </div>
+    )}
+  </div>
+
+  <div style="display:flex; justify-content:space-between; margin-top:var(--space-8);">
+    {page > 1 ? (
+      <a href={pageHref(page - 1)} class="btn btn-outline">上一頁</a>
+    ) : <span />}
+    {hasMore && <a href={pageHref(page + 1)} class="btn btn-outline">下一頁</a>}
+  </div>
+</SidebarLayout>

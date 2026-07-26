@@ -1,0 +1,58 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import { getSupabase } from "../lib/supabase";
+
+interface SummaryRow {
+  id: string;
+  summary_text: string;
+  email_count: number;
+  period_start: string;
+  period_end: string;
+  created_at: string;
+}
+
+const supabase = getSupabase();
+const { data, error } = await supabase
+  .from("email_summaries" as never)
+  .select("id, summary_text, email_count, period_start, period_end, created_at")
+  .order("created_at", { ascending: false })
+  .limit(50);
+const summaries = (data ?? []) as SummaryRow[];
+---
+
+<SidebarLayout title="摘要記錄 — Gmail 即時監控面板" showSummaries={false} activeView="summaries">
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">每小時未讀郵件摘要</h1>
+
+    {error && (
+      <div style="color:var(--color-error); margin-bottom:var(--space-4);">
+        查詢失敗：{error.message}
+      </div>
+    )}
+
+    <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+      {summaries.map((s) => (
+        <div class="card" style="padding:var(--space-4);">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:var(--space-4); margin-bottom:var(--space-2);">
+            <span class="badge" style="background:var(--color-primary-muted); color:var(--color-primary-hover);">
+              {s.email_count} 封未讀
+            </span>
+            <time datetime={s.created_at} style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+              {new Date(s.created_at).toLocaleString("zh-TW")}
+            </time>
+          </div>
+          <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-2);">
+            涵蓋期間：{new Date(s.period_start).toLocaleString("zh-TW")} ～ {new Date(s.period_end).toLocaleString("zh-TW")}
+          </div>
+          <p style="white-space:pre-line; font-size:var(--font-size-sm); color:var(--color-text);">
+            {s.summary_text}
+          </p>
+        </div>
+      ))}
+
+      {summaries.length === 0 && !error && (
+        <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
+          尚無摘要記錄，等待下一次每小時排程執行。
+        </div>
+      )}
+    </div>
+</SidebarLayout>

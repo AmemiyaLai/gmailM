@@ -72,7 +72,7 @@ export function parseAnalyticsRange(url: URL, now = new Date()): AnalyticsRange 
   return { preset: validPreset, from: addDays(today, -(days - 1)), to: today };
 }
 
-export function rangeToQueryBounds(range: AnalyticsRange): { from?: string; to?: string } {
+export function rangeToQueryBounds(range: AnalyticsRange | Pick<AnalyticsRange, "from" | "to">): { from?: string; to?: string } {
   if (!range.from || !range.to) return {};
   // 台北午夜為前一日 16:00 UTC；to 採用下一天午夜前的開區間，查詢端以 lt 使用。
   return { from: `${range.from}T00:00:00+08:00`, to: `${addDays(range.to, 1)}T00:00:00+08:00` };
@@ -116,8 +116,9 @@ export function buildEmailAnalytics(emails: AnalyticsEmail[], range: AnalyticsRa
     const bucket = trendBucket === "day" ? day : day.slice(0, 7);
     trend.set(bucket, (trend.get(bucket) ?? 0) + 1);
     hours[Number(parts.hour)]++;
-    const weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(parts.weekday);
-    if (weekday >= 0) weekdays[weekday]++;
+    const taipeiWeekday = new Date(new Date(email.received_at).getTime() + 8 * 60 * 60 * 1000).getUTCDay();
+    const weekday = taipeiWeekday === 0 ? 6 : taipeiWeekday - 1;
+    weekdays[weekday]++;
     const category = email.category || "uncategorized";
     categories.set(category, (categories.get(category) ?? 0) + 1);
     const sender = senders.get(email.sender);

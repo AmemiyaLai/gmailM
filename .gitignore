@@ -10,6 +10,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+dev_*.log
 
 # ===== 環境變數（絕對不提交實際的 .env 檔案！） =====
 .env

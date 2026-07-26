@@ -3,7 +3,7 @@ import { defineConfig } from "astro/config";
 import vercel from "@astrojs/vercel";
 
 export default defineConfig({
-  site: "https://mail.yourdomain.com",
+  site: "https://gmailm.autodesignlab.org",
   output: "server",
   adapter: vercel(),
   server: {

@@ -84,15 +84,18 @@ describe("emailQueries", () => {
     it("應回傳所有類別的計數", async () => {
       let callIndex = 0;
       mockQuery.then = (resolve: (v: unknown) => void) => {
-        const counts = [10, 5, 3, 20];
+        const counts = [10, 5, 3, 8, 6, 4, 20];
         resolve({ data: [], error: null, count: counts[callIndex++] ?? 0 });
       };
 
       const results = await getCategoryCounts();
-      expect(results).toHaveLength(4);
+      expect(results).toHaveLength(7);
       expect(results.map((r) => r.category)).toContain("devlog");
       expect(results.map((r) => r.category)).toContain("newsletter");
       expect(results.map((r) => r.category)).toContain("system");
+      expect(results.map((r) => r.category)).toContain("banking");
+      expect(results.map((r) => r.category)).toContain("ecommerce");
+      expect(results.map((r) => r.category)).toContain("securities");
       expect(results.map((r) => r.category)).toContain("uncategorized");
     });
   });

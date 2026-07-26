@@ -1,6 +1,6 @@
 # Gmail 即時監控面板
 
-Gmail 新信件透過 GCP Pub/Sub 即時推送到 Astro SSR（Vercel）的 Webhook，寫入 Supabase，並透過 Pusher 即時廣播到瀏覽器面板。整個網域掛在 Cloudflare Access 之後做身分保護。
+Gmail 新信件透過 GCP Pub/Sub 即時推送到 Astro SSR（Vercel）的 Webhook，寫入 Supabase，並透過 Pusher 即時廣播到瀏覽器面板；其中被 Gmail 標記為「重要」的郵件會額外推播到 Discord。整個網域掛在 Cloudflare Access 之後做身分保護。
 
 ## 技術棧
 
@@ -37,6 +37,6 @@ npm run dev             # http://localhost:4321
 
 ```
 Gmail → GCP Pub/Sub → Webhook (Vercel) → Supabase + Pusher → 瀏覽器面板
-                                ↑
-                    Cloudflare Access（身分保護）
+                                ↑                    ↓
+                    Cloudflare Access（身分保護）  Discord（重要郵件通知）
 ```

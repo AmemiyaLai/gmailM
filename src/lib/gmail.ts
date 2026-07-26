@@ -119,6 +119,32 @@ export async function getMessage(
   };
 }
 
+export async function listMessages(
+  maxResults: number,
+): Promise<string[]> {
+  const gmail = getGmailClient();
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+
+  while (ids.length < maxResults) {
+    const res = await gmail.users.messages.list({
+      userId: "me",
+      labelIds: ["INBOX"],
+      maxResults: Math.min(100, maxResults - ids.length),
+      pageToken,
+    });
+
+    for (const msg of res.data.messages ?? []) {
+      if (msg.id) ids.push(msg.id);
+    }
+
+    pageToken = res.data.nextPageToken ?? undefined;
+    if (!pageToken) break;
+  }
+
+  return ids;
+}
+
 export async function markAsRead(messageId: string): Promise<void> {
   const gmail = getGmailClient();
   await gmail.users.messages.modify({

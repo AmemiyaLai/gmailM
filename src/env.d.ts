@@ -17,6 +17,7 @@ interface ImportMetaEnv {
   readonly PUBSUB_TOPIC: string;
   readonly PUBSUB_AUDIENCE: string;
   readonly CRON_SECRET: string;
+  readonly DISCORD_WEBHOOK_URL: string;
 }
 
 interface ImportMeta {

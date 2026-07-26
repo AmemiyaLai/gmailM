@@ -4,6 +4,7 @@ import { getSupabase } from "../../../lib/supabase";
 import { getPusher } from "../../../lib/pusher";
 import { listHistory, getMessage } from "../../../lib/gmail";
 import { classifyEmail } from "../../../lib/classify";
+import { sendDiscordNotification } from "../../../lib/discord";
 
 interface SyncStateRow {
   watch_address: string;
@@ -109,6 +110,12 @@ export const POST: APIRoute = async ({ request }) => {
         received_at: gmailMsg.receivedAt.toISOString(),
         category,
       });
+
+      if (gmailMsg.labels.includes("IMPORTANT")) {
+        await sendDiscordNotification(gmailMsg).catch((err) =>
+          console.error(`Failed to send Discord notification for ${messageId}:`, err),
+        );
+      }
     } catch (err) {
       console.error(`Failed to process message ${messageId}:`, err);
     }

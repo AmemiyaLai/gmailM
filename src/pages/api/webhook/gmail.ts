@@ -8,6 +8,7 @@ import { sendDiscordNotification } from "../../../lib/discord";
 import { judgeEmailImportance } from "../../../lib/gemini";
 import { normalizeSenderAddress } from "../../../lib/senderAddress";
 import { deliverFirstSenderNotification, registerFirstSender } from "../../../lib/firstSender";
+import { refreshSenderTags } from "../../../lib/senderTagService";
 
 interface SyncStateRow {
   watch_address: string;
@@ -175,6 +176,8 @@ export const POST: APIRoute = async ({ request }) => {
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
+
+  await refreshSenderTags(supabase).catch((error) => console.error("Sender tag refresh failed:", error));
 
   return new Response("OK", { status: 200 });
 };

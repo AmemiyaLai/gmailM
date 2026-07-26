@@ -4,6 +4,7 @@ import { listMessages, getMessage } from "./gmail";
 import { classifyEmail } from "./classify";
 import { normalizeSenderAddress } from "./senderAddress";
 import { registerFirstSender } from "./firstSender";
+import { refreshSenderTags } from "./senderTagService";
 
 export interface SyncResult {
   imported: number;
@@ -70,6 +71,7 @@ export async function syncEmailsFromGmail(limit: number): Promise<SyncResult> {
   }
 
   await pusher.trigger("gmail-channel", "backfill-complete", { imported, failed });
+  if (imported > 0) await refreshSenderTags(supabase).catch((error) => console.error("Sender tag refresh failed:", error));
 
   return { imported, failed };
 }

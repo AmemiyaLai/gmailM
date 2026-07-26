@@ -29,10 +29,7 @@ const { showSummaries = true } = Astro.props;
     <nav class="header-nav">
       <div class="header-search-wrap">
         <button id="search-toggle" type="button" class="btn btn-outline nav-btn search-toggle-btn" title="搜尋郵件" aria-label="搜尋郵件" aria-expanded="false">
-          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
+          <span class="material-symbols-rounded search-icon" aria-hidden="true">search</span>
         </button>
         <form id="header-search-form" class="header-search" action="/search" method="get">
           <input type="text" name="q" id="header-search-input" placeholder="搜尋寄件者 / 主旨 / 內文摘要" autocomplete="off" />
@@ -40,10 +37,7 @@ const { showSummaries = true } = Astro.props;
       </div>
       {showSummaries && (
         <a href="/summaries" class="btn btn-outline nav-btn">
-          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-          </svg>
+          <span class="material-symbols-rounded search-icon" aria-hidden="true">menu_book</span>
           <span>摘要記錄</span>
         </a>
       )}
@@ -51,21 +45,12 @@ const { showSummaries = true } = Astro.props;
         連線中...
       </span>
       <button id="sync-now" type="button" class="btn btn-outline nav-btn" title="立即從 Gmail 同步最新郵件">
-        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M23 4v6h-6"></path>
-          <path d="M1 20v-6h6"></path>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
+        <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
         <span>立即同步</span>
       </button>
       <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
-        <svg id="theme-icon-light" class="theme-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="4"></circle>
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
-        </svg>
-        <svg id="theme-icon-dark" class="theme-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
+        <span id="theme-icon-light" class="material-symbols-rounded theme-icon" aria-hidden="true">light_mode</span>
+        <span id="theme-icon-dark" class="material-symbols-rounded theme-icon" aria-hidden="true" style="display:none;">dark_mode</span>
       </button>
     </nav>
   </div>
@@ -282,6 +267,7 @@ const { showSummaries = true } = Astro.props;
   }
 
   .search-icon {
+    font-size: 16px;
     opacity: 0.8;
   }
 
@@ -338,11 +324,17 @@ const { showSummaries = true } = Astro.props;
   }
 
   .connection-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--color-bg-tertiary);
     color: var(--color-text-tertiary);
-    padding: var(--space-1) var(--space-3);
+    /* 與同列 .nav-btn 使用相同字級、內距與邊框高度。 */
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid transparent;
     border-radius: var(--radius-full);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+    white-space: nowrap;
   }
 </style>

@@ -1,9 +1,9 @@
 type BulkAction = "read" | "archive" | "trash";
 
 function setStarVisual(btn: Element, starred: boolean) {
-  const svg = btn.querySelector("svg");
-  if (svg) {
-    svg.setAttribute("fill", starred ? "var(--color-warning)" : "none");
+  const icon = btn.querySelector(".star-icon");
+  if (icon) {
+    icon.classList.toggle("starred", starred);
   }
   btn.setAttribute("aria-pressed", starred ? "true" : "false");
 }

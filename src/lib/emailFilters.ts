@@ -10,6 +10,16 @@ export interface EmailFilterParams {
   page: number;
 }
 
+/** 將日期選擇器的值轉為台北當日開始時間，避免瀏覽器以 UTC 解讀日期。 */
+export function startOfTaipeiDate(date: string): string {
+  return new Date(`${date}T00:00:00+08:00`).toISOString();
+}
+
+/** 日期篩選的結束日需包含整個台北曆日。 */
+export function endOfTaipeiDate(date: string): string {
+  return new Date(`${date}T23:59:59.999+08:00`).toISOString();
+}
+
 export function parseEmailFilterParams(url: URL): EmailFilterParams {
   const get = (key: string) => url.searchParams.get(key)?.trim() || undefined;
   return {

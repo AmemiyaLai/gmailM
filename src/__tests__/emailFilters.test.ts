@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
+import { buildFilterHref, endOfTaipeiDate, parseEmailFilterParams, startOfTaipeiDate } from "../lib/emailFilters";
 
 describe("parseEmailFilterParams()", () => {
+  it("日期範圍以台北曆日為準，且結束日包含整天", () => {
+    expect(startOfTaipeiDate("2026-07-26")).toBe("2026-07-25T16:00:00.000Z");
+    expect(endOfTaipeiDate("2026-07-26")).toBe("2026-07-26T15:59:59.999Z");
+  });
+
   it("無參數時應回傳預設值", () => {
     const url = new URL("https://example.com/emails");
     const result = parseEmailFilterParams(url);

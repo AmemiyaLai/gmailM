@@ -62,6 +62,23 @@ export interface ImportanceResult {
   reason?: string;
 }
 
+export interface SenderTagJudgeResult {
+  tag: string;
+  confidence: number;
+}
+
+export async function judgeSenderTag(email: ImportanceJudgeInput): Promise<SenderTagJudgeResult> {
+  const prompt = `將這封郵件的寄件者歸入一個共享主題標籤。只能使用：banking、securities、commerce、development、media、learning、travel、security、other。
+寄件者：${email.sender}\n主旨：${email.subject || "(無主旨)"}\n摘要：${email.snippet || "(無)"}\n請只回傳 JSON：{"tag":"其中一個標籤","confidence":0到1的數字}`;
+  const res = await getClient().models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: { responseMimeType: "application/json" },
+  });
+  const parsed = JSON.parse(res.text ?? "{}");
+  return { tag: typeof parsed.tag === "string" ? parsed.tag : "other", confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0 };
+}
+
 export async function judgeEmailImportance(email: ImportanceJudgeInput): Promise<ImportanceResult> {
   const prompt = `判斷以下郵件對收件者而言是否為「重要郵件」（例如：需要立即處理的通知、帳務/安全性警示、重要人物來信、待辦事項截止提醒等；廣告、電子報、行銷推播、一般系統自動通知通常不算重要）。
 

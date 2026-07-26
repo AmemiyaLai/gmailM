@@ -21,7 +21,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "banking",
     label: "銀行 / 金融",
-    icon: "🏦",
+    icon: "account_balance",
     colorVar: "--color-success",
     patterns: [
       "esun",
@@ -46,7 +46,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "devtools",
     label: "程式碼 / 開發",
-    icon: "💻",
+    icon: "code",
     colorVar: "--color-info",
     patterns: [
       "github.com",
@@ -74,7 +74,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "ecommerce",
     label: "電子商務",
-    icon: "🛍️",
+    icon: "shopping_bag",
     colorVar: "--color-warning",
     patterns: [
       "shopee",
@@ -95,7 +95,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "newsletter",
     label: "電子報",
-    icon: "📰",
+    icon: "newspaper",
     colorVar: "--color-primary",
     patterns: [
       "newsletter",
@@ -116,7 +116,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "securities",
     label: "證券 / 投資",
-    icon: "📈",
+    icon: "trending_up",
     colorVar: "--color-error",
     patterns: [
       "capital",
@@ -141,7 +141,7 @@ export const SENDER_GROUPS: SenderGroup[] = [
   {
     id: "others",
     label: "其他通知",
-    icon: "📦",
+    icon: "inventory_2",
     colorVar: "--color-text-tertiary",
     patterns: [],   // 兜底群組，不匹配任何 pattern，在程式中特殊處理
   },

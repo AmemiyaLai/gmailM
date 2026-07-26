@@ -14,31 +14,31 @@ const { activeView = null, activeCategory = null } = Astro.props;
   <nav class="sidebar-nav">
     <div class="sidebar-section">
       <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">dashboard</span>
         儀表板
       </a>
       <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" /><path d="M4 8h16M8 8v12" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">mail</span>
         全部郵件
       </a>
       <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z" /><path d="m4 4 8 8 8-8" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">mark_email_unread</span>
         未讀郵件
       </a>
       <a href="/emails?important=1" class:list={["sidebar-link", { active: activeView === "important" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">star</span>
         重要郵件
       </a>
       <a href="/senders" class:list={["sidebar-link", { active: activeView === "senders" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">group</span>
         常見寄件者
       </a>
       <a href="/analytics" class:list={["sidebar-link", { active: activeView === "analytics" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18" /><path d="m7 16 4-5 3 3 5-7" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">analytics</span>
         郵件分析
       </a>
       <a href="/first-senders" class:list={["sidebar-link", { active: activeView === "first-senders" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">verified_user</span>
         首次安全紀錄
       </a>
     </div>
@@ -61,7 +61,7 @@ const { activeView = null, activeCategory = null } = Astro.props;
 
     <div class="sidebar-section">
       <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>
-        <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">menu_book</span>
         摘要記錄
       </a>
     </div>

@@ -22,9 +22,7 @@ export function renderEmailRowHtml(data: NewEmailData): string {
     <input type="checkbox" class="email-checkbox" aria-label="選取郵件" />
 
     <button type="button" class="star-btn" aria-label="加星號" aria-pressed="${isStarred ? "true" : "false"}">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="${isStarred ? "var(--color-warning)" : "none"}" stroke="var(--color-text-tertiary)" stroke-width="1.5">
-        <polygon points="12 2 15.09 8.63 22 9.24 17 14.14 18.18 21 12 17.77 5.82 21 7 14.14 2 9.24 8.91 8.63 12 2" />
-      </svg>
+      <span class="material-symbols-rounded email-action-icon star-icon${isStarred ? " starred" : ""}" aria-hidden="true">star</span>
     </button>
 
     <a href="/emails/${encodeURIComponent(data.id)}" class="email-link">
@@ -40,20 +38,13 @@ export function renderEmailRowHtml(data: NewEmailData): string {
       <time class="email-date" datetime="${data.received_at}">${formattedDate}</time>
       <div class="email-actions">
         <button type="button" class="action-btn" data-action="read" title="標示為已讀">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 8l9 6 9-6M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" />
-          </svg>
+          <span class="material-symbols-rounded email-action-icon" aria-hidden="true">mail</span>
         </button>
         <button type="button" class="action-btn" data-action="archive" title="封存">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="4" rx="1" />
-            <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4" />
-          </svg>
+          <span class="material-symbols-rounded email-action-icon" aria-hidden="true">archive</span>
         </button>
         <button type="button" class="action-btn" data-action="trash" title="刪除">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
-          </svg>
+          <span class="material-symbols-rounded email-action-icon" aria-hidden="true">delete</span>
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { categories } from "./classify";
 import type { SenderGroup } from "./senderGroups";
 import type { AnalyticsEmail, AnalyticsRange } from "./emailAnalytics";
 import { rangeToQueryBounds } from "./emailAnalytics";
+import { endOfTaipeiDate, startOfTaipeiDate } from "./emailFilters";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -199,10 +200,10 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
     query = query.ilike("recipient", `%${recipient}%`);
   }
   if (from) {
-    query = query.gte("received_at", new Date(from).toISOString());
+    query = query.gte("received_at", startOfTaipeiDate(from));
   }
   if (to) {
-    query = query.lte("received_at", new Date(to).toISOString());
+    query = query.lte("received_at", endOfTaipeiDate(to));
   }
 
   const { data } = await query;
@@ -424,7 +425,7 @@ export async function getSenderGroupTopSenders(
  * 依分析期間取回所有郵件。Supabase 單次回傳上限為 1,000 筆，故採分頁讀取。
  * 僅讀取統計與關鍵詞分析需要的欄位，正文不會傳到瀏覽器。
  */
-export async function getAnalyticsEmails(range: AnalyticsRange): Promise<AnalyticsEmail[]> {
+export async function getAnalyticsEmails(range: AnalyticsRange | Pick<AnalyticsRange, "from" | "to">): Promise<AnalyticsEmail[]> {
   const supabase = getSupabase();
   const pageSize = 1000;
   const all: AnalyticsEmail[] = [];

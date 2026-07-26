@@ -76,7 +76,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
     showUnreadToggle={false}
   />
 
-  <div id="email-list" style="display:flex; flex-direction:column; gap:var(--space-3);">
+  <div id="email-list" data-unread-only="true" style="display:flex; flex-direction:column; gap:var(--space-3);">
     {recentUnread.map((email) => (
       <EmailCard
         id={email.id}

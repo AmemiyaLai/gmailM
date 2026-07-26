@@ -20,6 +20,7 @@ function syncGroupSelectAll(group: HTMLElement) {
 
 export function initEmailList(container: HTMLElement): void {
   const selected = new Set<string>();
+  const unreadOnly = container.dataset.unreadOnly === "true";
 
   const toolbar = document.createElement("div");
   toolbar.className = "bulk-toolbar";
@@ -56,10 +57,14 @@ export function initEmailList(container: HTMLElement): void {
         selected.delete(id);
         if (!row) continue;
         if (action === "read") {
-          row.dataset.read = "true";
-          row.classList.remove("email-row--unread");
-          const checkbox = row.querySelector(".email-checkbox") as HTMLInputElement | null;
-          if (checkbox) checkbox.checked = false;
+          if (unreadOnly) {
+            row.remove();
+          } else {
+            row.dataset.read = "true";
+            row.classList.remove("email-row--unread");
+            const checkbox = row.querySelector(".email-checkbox") as HTMLInputElement | null;
+            if (checkbox) checkbox.checked = false;
+          }
         } else {
           row.remove();
         }
@@ -158,9 +163,13 @@ export function initEmailList(container: HTMLElement): void {
             body: JSON.stringify({ read: nextRead }),
           });
           if (res.ok) {
-            row.dataset.read = nextRead ? "true" : "false";
-            row.classList.toggle("email-row--unread", !nextRead);
-            actionBtn.title = nextRead ? "標示為未讀" : "標示為已讀";
+            if (nextRead && unreadOnly) {
+              row.remove();
+            } else {
+              row.dataset.read = nextRead ? "true" : "false";
+              row.classList.toggle("email-row--unread", !nextRead);
+              actionBtn.title = nextRead ? "標示為未讀" : "標示為已讀";
+            }
           }
         } catch (err) {
           console.error("Read toggle failed:", err);

@@ -60,7 +60,7 @@ for (const email of emails) {
     showUnreadToggle={false}
   />
 
-  <div id="email-list" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
+  <div id="email-list" data-unread-only="true" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
     {groups.map((group, i) => (
       <details class="sender-group" open={i === 0} data-sender={group.sender}>
         <summary class="sender-group-header">

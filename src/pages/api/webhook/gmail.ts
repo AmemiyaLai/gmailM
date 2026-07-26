@@ -80,93 +80,97 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response("OK — initial baseline recorded", { status: 200 });
   }
 
-  const { messages } = await listHistory(String(lastHistoryId));
+  try {
+    const { messages } = await listHistory(String(lastHistoryId));
 
-  for (const { messageId } of messages) {
-    try {
-      const gmailMsg = await getMessage(messageId);
-      const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
-      const senderAddress = normalizeSenderAddress(gmailMsg.sender);
-
-      let important = gmailMsg.labels.includes("IMPORTANT"); // Gemini 失敗時的 fallback
-      let importanceReason: string | undefined;
+    for (const { messageId } of messages) {
       try {
-        const judged = await judgeEmailImportance({
-          sender: gmailMsg.sender,
-          subject: gmailMsg.subject,
-          snippet: gmailMsg.snippet,
-        });
-        important = judged.important;
-        importanceReason = judged.reason;
-      } catch (err) {
-        console.error(`Gemini importance judge failed for ${messageId}, falling back to IMPORTANT label:`, err);
-      }
+        const gmailMsg = await getMessage(messageId);
+        const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
+        const senderAddress = normalizeSenderAddress(gmailMsg.sender);
 
-      const { error: emailUpsertError } = await supabase.from("emails" as never).upsert(
-        {
+        let important = gmailMsg.labels.includes("IMPORTANT"); // Gemini 失敗時的 fallback
+        let importanceReason: string | undefined;
+        try {
+          const judged = await judgeEmailImportance({
+            sender: gmailMsg.sender,
+            subject: gmailMsg.subject,
+            snippet: gmailMsg.snippet,
+          });
+          important = judged.important;
+          importanceReason = judged.reason;
+        } catch (err) {
+          console.error(`Gemini importance judge failed for ${messageId}, falling back to IMPORTANT label:`, err);
+        }
+
+        const { error: emailUpsertError } = await supabase.from("emails" as never).upsert(
+          {
+            id: gmailMsg.id,
+            thread_id: gmailMsg.threadId,
+            sender: gmailMsg.sender,
+            sender_address: senderAddress,
+            recipient: gmailMsg.recipient,
+            subject: gmailMsg.subject,
+            snippet: gmailMsg.snippet,
+            body_html: gmailMsg.bodyHtml,
+            body_plain: gmailMsg.bodyPlain,
+            labels: gmailMsg.labels,
+            received_at: gmailMsg.receivedAt.toISOString(),
+            is_read: gmailMsg.isRead,
+            category,
+            is_important: important,
+            importance_reason: importanceReason ?? null,
+          } as never,
+          { onConflict: "id" },
+        );
+        if (emailUpsertError) throw emailUpsertError;
+
+        if (important) {
+          await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
+            console.error(`Failed to send Discord notification for ${messageId}:`, err),
+          );
+        }
+
+        let isFirstSender = false;
+        if (senderAddress) {
+          const firstEvent = await registerFirstSender(supabase, {
+            sender_address: senderAddress,
+            first_email_id: gmailMsg.id,
+            sender_display: gmailMsg.sender,
+            first_received_at: gmailMsg.receivedAt.toISOString(),
+            source: "live",
+          });
+          if (firstEvent) {
+            isFirstSender = true;
+            const { error: firstFlagError } = await supabase.from("emails" as never)
+              .update({ is_first_sender: true } as never)
+              .eq("id", gmailMsg.id);
+            if (firstFlagError) throw firstFlagError;
+            await deliverFirstSenderNotification(supabase, firstEvent, {
+              ...gmailMsg,
+              senderAddress,
+              category,
+            });
+          }
+        }
+
+        const pusher = getPusher();
+        await pusher.trigger("gmail-channel", "new-email", {
           id: gmailMsg.id,
-          thread_id: gmailMsg.threadId,
           sender: gmailMsg.sender,
-          sender_address: senderAddress,
-          recipient: gmailMsg.recipient,
           subject: gmailMsg.subject,
           snippet: gmailMsg.snippet,
-          body_html: gmailMsg.bodyHtml,
-          body_plain: gmailMsg.bodyPlain,
-          labels: gmailMsg.labels,
           received_at: gmailMsg.receivedAt.toISOString(),
-          is_read: gmailMsg.isRead,
           category,
           is_important: important,
-          importance_reason: importanceReason ?? null,
-        } as never,
-        { onConflict: "id" },
-      );
-      if (emailUpsertError) throw emailUpsertError;
-
-      if (important) {
-        await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
-          console.error(`Failed to send Discord notification for ${messageId}:`, err),
-        );
-      }
-
-      let isFirstSender = false;
-      if (senderAddress) {
-        const firstEvent = await registerFirstSender(supabase, {
-          sender_address: senderAddress,
-          first_email_id: gmailMsg.id,
-          sender_display: gmailMsg.sender,
-          first_received_at: gmailMsg.receivedAt.toISOString(),
-          source: "live",
+          is_first_sender: isFirstSender,
         });
-        if (firstEvent) {
-          isFirstSender = true;
-          const { error: firstFlagError } = await supabase.from("emails" as never)
-            .update({ is_first_sender: true } as never)
-            .eq("id", gmailMsg.id);
-          if (firstFlagError) throw firstFlagError;
-          await deliverFirstSenderNotification(supabase, firstEvent, {
-            ...gmailMsg,
-            senderAddress,
-            category,
-          });
-        }
+      } catch (err) {
+        console.error(`Failed to process message ${messageId}:`, err);
       }
-
-      const pusher = getPusher();
-      await pusher.trigger("gmail-channel", "new-email", {
-        id: gmailMsg.id,
-        sender: gmailMsg.sender,
-        subject: gmailMsg.subject,
-        snippet: gmailMsg.snippet,
-        received_at: gmailMsg.receivedAt.toISOString(),
-        category,
-        is_important: important,
-        is_first_sender: isFirstSender,
-      });
-    } catch (err) {
-      console.error(`Failed to process message ${messageId}:`, err);
     }
+  } catch (err) {
+    console.error("listHistory failed:", err);
   }
 
   await supabase

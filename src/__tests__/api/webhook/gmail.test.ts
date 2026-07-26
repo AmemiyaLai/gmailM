@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.stubEnv("CRON_SECRET", "test-secret");
+vi.stubEnv("PUBSUB_AUDIENCE", "test-audience");
+vi.stubEnv("GCP_PROJECT_ID", "myproject");
+
 const { mockVerifyIdToken } = vi.hoisted(() => ({
   mockVerifyIdToken: vi.fn(),
 }));
 
 vi.mock("google-auth-library", () => ({
-  OAuth2Client: vi.fn().mockImplementation(() => ({
-    verifyIdToken: mockVerifyIdToken,
-  })),
+  OAuth2Client: vi.fn().mockImplementation(function () {
+    return { verifyIdToken: mockVerifyIdToken };
+  }),
 }));
 
 const {
@@ -63,12 +67,16 @@ vi.mock("../../../lib/supabase", () => ({
 }));
 
 vi.mock("../../../lib/pusher", () => ({
-  getPusher: vi.fn(() => ({
-    trigger: vi.fn().mockResolvedValue(undefined),
-  })),
+  getPusher: vi.fn().mockImplementation(function () {
+    return {
+      trigger: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 import { POST } from "../../../pages/api/webhook/gmail";
+
+const VALID_TOKEN = "service-123@myproject.iam.gserviceaccount.com";
 
 function makeContext(authHeader?: string, body?: object) {
   const headers = new Headers();
@@ -83,44 +91,42 @@ function makeContext(authHeader?: string, body?: object) {
 }
 
 function setupSupabase(opts?: { lastHistoryId?: number | null }) {
-  const selectChain = {
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({
-      data: opts?.lastHistoryId !== undefined ? { last_history_id: opts.lastHistoryId } : null,
-      error: null,
-    }),
-  };
-  const upsertChain = {
-    upsert: vi.fn().mockResolvedValue({ error: null }),
-  };
-  const emailUpsertChain = {
-    upsert: vi.fn().mockResolvedValue({ error: null }),
-  };
-  const updateChain = {
-    update: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockResolvedValue({ error: null }),
+  const selectResult = {
+    data: opts?.lastHistoryId !== undefined ? { last_history_id: opts.lastHistoryId } : null,
+    error: null,
   };
 
-  let callCount = 0;
-  const fromMock = vi.fn(() => {
-    callCount++;
-    if (callCount === 1) return selectChain;
-    if (callCount === 2) return upsertChain;
-    if (callCount === 3) return emailUpsertChain;
-    return updateChain;
-  });
+  function makeChain() {
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue(selectResult),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockResolvedValue({ error: null }),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    return chain;
+  }
+
+  const supabaseChain = makeChain();
+  const fromMock = vi.fn(() => supabaseChain);
 
   mockGetSupabase.mockReturnValue({ from: fromMock } as never);
-  return { selectChain, upsertChain, emailUpsertChain, updateChain };
+  return { chain: supabaseChain };
 }
 
 describe("POST /api/webhook/gmail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("CRON_SECRET", "test-secret");
-    vi.stubEnv("PUBSUB_AUDIENCE", "test-audience");
-    vi.stubEnv("GCP_PROJECT_ID", "myproject");
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({
+        email: VALID_TOKEN,
+        azp: "123",
+      }),
+    });
   });
 
   it("無 Authorization header 應回傳 401", async () => {
@@ -135,7 +141,6 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("無效 JSON body 應回傳 400", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     const req = new Request("http://localhost/api/webhook/gmail", {
       method: "POST",
       headers: { authorization: "Bearer valid" },
@@ -146,13 +151,11 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("缺少必要欄位時應回傳 400", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     const res = await POST(makeContext("Bearer valid", { emailAddress: "a" }));
     expect(res.status).toBe(400);
   });
 
   it("首次 baseline 記錄時應回傳 200", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     setupSupabase({ lastHistoryId: null });
     const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "100" }));
     expect(res.status).toBe(200);
@@ -161,8 +164,7 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("正常處理新郵件時應回傳 200", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
-    const { updateChain } = setupSupabase({ lastHistoryId: 50 });
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
 
     mockListHistory.mockResolvedValue({
       messages: [{ messageId: "msg-1" }],
@@ -188,11 +190,10 @@ describe("POST /api/webhook/gmail", () => {
     expect(mockClassifyEmail).toHaveBeenCalled();
     expect(mockJudgeEmailImportance).toHaveBeenCalled();
     expect(mockSendDiscordNotification).toHaveBeenCalled();
-    expect(updateChain.update).toHaveBeenCalled();
+    expect(chain.update).toHaveBeenCalled();
   });
 
   it("Gemini 判斷失敗時應使用 IMPORTANT label fallback", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     setupSupabase({ lastHistoryId: 50 });
 
     mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-1" }] });
@@ -216,7 +217,6 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("listHistory 拋出異常時應不中斷處理", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     setupSupabase({ lastHistoryId: 50 });
     mockListHistory.mockRejectedValue(new Error("history fail"));
 
@@ -225,7 +225,6 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("senderAddress 存在時應呼叫 registerFirstSender", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     setupSupabase({ lastHistoryId: 50 });
     mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-1" }] });
     mockGetMessage.mockResolvedValue({
@@ -249,7 +248,6 @@ describe("POST /api/webhook/gmail", () => {
   });
 
   it("處理完成後應呼叫 refreshSenderTags", async () => {
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => ({ email: "service-123@myproject.iam.gserviceaccount.com", azp: "123" }) });
     setupSupabase({ lastHistoryId: 50 });
     mockListHistory.mockResolvedValue({ messages: [] });
 

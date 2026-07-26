@@ -1,6 +1,7 @@
 ---
 import { categoryBadge } from "../lib/categoryBadge";
 import { formatEmailDate } from "../lib/formatEmailDate";
+import { extractSenderName } from "../lib/senderUtils";
 
 export interface Props {
   id: string;
@@ -54,7 +55,7 @@ const formattedDate = formatEmailDate(receivedAt);
 
   <a href={`/emails/${id}`} class="email-link">
     <span class="unread-dot"></span>
-    <span class="email-sender">{sender}</span>
+    <span class="email-sender">{extractSenderName(sender)}</span>
     <span class="email-subject">{subject || "(無主旨)"}</span>
     {!compact && <span class="email-snippet">— {snippet}</span>}
     {badge && (

@@ -2,6 +2,9 @@ import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { summarizeUnreadEmails } from "../../../lib/gemini";
 import { sendDiscordSummary } from "../../../lib/discord";
+import { syncEmailsFromGmail } from "../../../lib/emailSync";
+
+const SYNC_LIMIT = 50;
 
 interface UnreadEmailRow {
   sender: string;
@@ -30,11 +33,18 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  let syncResult = { imported: 0, failed: 0 };
+  try {
+    syncResult = await syncEmailsFromGmail(SYNC_LIMIT);
+  } catch (err) {
+    console.error("Hourly summary: Gmail sync failed:", err);
+  }
+
   if (isQuietHours()) {
-    return new Response(JSON.stringify({ status: "skipped", reason: "quiet hours" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ status: "skipped", reason: "quiet hours", sync: syncResult }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   const supabase = getSupabase();
@@ -53,10 +63,10 @@ export const GET: APIRoute = async ({ request }) => {
   const unread = data ?? [];
 
   if (unread.length === 0) {
-    return new Response(JSON.stringify({ status: "skipped", reason: "no unread emails" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ status: "skipped", reason: "no unread emails", sync: syncResult }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   const periodStart = new Date(unread[0].received_at);
@@ -71,7 +81,11 @@ export const GET: APIRoute = async ({ request }) => {
 
   if (lastSummary && periodEnd.getTime() <= new Date(lastSummary.period_end).getTime()) {
     return new Response(
-      JSON.stringify({ status: "skipped", reason: "no new unread emails since last summary" }),
+      JSON.stringify({
+        status: "skipped",
+        reason: "no new unread emails since last summary",
+        sync: syncResult,
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -105,10 +119,10 @@ export const GET: APIRoute = async ({ request }) => {
       periodEnd,
     }).catch((err) => console.error("Hourly summary: Discord send failed:", err));
 
-    return new Response(JSON.stringify({ status: "ok", emailCount: unread.length }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ status: "ok", emailCount: unread.length, sync: syncResult }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
   } catch (err) {
     console.error("Hourly summary: Gemini summarization failed:", err);
     return new Response("Gemini summarization failed", { status: 502 });

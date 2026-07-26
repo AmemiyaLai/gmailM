@@ -8,6 +8,16 @@ function setStarVisual(btn: Element, starred: boolean) {
   btn.setAttribute("aria-pressed", starred ? "true" : "false");
 }
 
+function syncGroupSelectAll(group: HTMLElement) {
+  const checkboxes = group.querySelectorAll<HTMLInputElement>(".email-checkbox");
+  const selectAll = group.querySelector<HTMLInputElement>(".group-select-all");
+  if (!selectAll || checkboxes.length === 0) return;
+
+  const checkedCount = Array.from(checkboxes).filter((cb) => cb.checked).length;
+  selectAll.checked = checkedCount === checkboxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+}
+
 export function initEmailList(container: HTMLElement): void {
   const selected = new Set<string>();
 
@@ -63,16 +73,43 @@ export function initEmailList(container: HTMLElement): void {
 
   container.addEventListener("change", (e) => {
     const target = e.target as HTMLElement;
-    if (!target.matches(".email-checkbox")) return;
-    const row = target.closest("[data-id]") as HTMLElement | null;
-    if (!row) return;
-    const id = row.dataset.id!;
-    if ((target as HTMLInputElement).checked) {
-      selected.add(id);
-    } else {
-      selected.delete(id);
+
+    if (target.matches(".group-select-all")) {
+      const details = target.closest("details.sender-group");
+      if (details) {
+        const checkboxes = details.querySelectorAll<HTMLInputElement>(".email-checkbox");
+        const checked = (target as HTMLInputElement).checked;
+        checkboxes.forEach((cb) => {
+          cb.checked = checked;
+          const row = cb.closest("[data-id]") as HTMLElement | null;
+          if (row) {
+            const id = row.dataset.id!;
+            if (checked) {
+              selected.add(id);
+            } else {
+              selected.delete(id);
+            }
+          }
+        });
+        updateToolbar();
+      }
+      return;
     }
-    updateToolbar();
+
+    if (target.matches(".email-checkbox")) {
+      const row = target.closest("[data-id]") as HTMLElement | null;
+      if (!row) return;
+      const id = row.dataset.id!;
+      if ((target as HTMLInputElement).checked) {
+        selected.add(id);
+      } else {
+        selected.delete(id);
+      }
+      updateToolbar();
+
+      const group = target.closest("details.sender-group") as HTMLElement | null;
+      if (group) syncGroupSelectAll(group);
+    }
   });
 
   container.addEventListener("click", async (e) => {
@@ -108,8 +145,29 @@ export function initEmailList(container: HTMLElement): void {
       e.preventDefault();
       e.stopPropagation();
       const row = actionBtn.closest("[data-id]") as HTMLElement;
-      const action = actionBtn.dataset.action as BulkAction;
-      await runBulkAction([row.dataset.id!], action);
+      const action = actionBtn.dataset.action as string;
+      const id = row.dataset.id!;
+
+      if (action === "read") {
+        const isCurrentlyRead = row.dataset.read === "true";
+        const nextRead = !isCurrentlyRead;
+        try {
+          const res = await fetch(`/api/emails/${encodeURIComponent(id)}/read`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ read: nextRead }),
+          });
+          if (res.ok) {
+            row.dataset.read = nextRead ? "true" : "false";
+            row.classList.toggle("email-row--unread", !nextRead);
+            actionBtn.title = nextRead ? "標示為未讀" : "標示為已讀";
+          }
+        } catch (err) {
+          console.error("Read toggle failed:", err);
+        }
+      } else {
+        await runBulkAction([id], action as BulkAction);
+      }
     }
   });
 

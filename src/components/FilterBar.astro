@@ -3,7 +3,6 @@ import { categories } from "../lib/classify";
 
 export interface Props {
   action: string;
-  showQ?: boolean;
   q?: string;
   category?: string;
   sender?: string;
@@ -17,7 +16,6 @@ export interface Props {
 
 const {
   action,
-  showQ = false,
   q = "",
   category = "",
   sender = "",
@@ -33,15 +31,7 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
 ---
 
 <form method="get" action={action} class="filter-bar">
-  {showQ && (
-    <input
-      type="text"
-      name="q"
-      value={q}
-      placeholder="搜尋寄件者 / 主旨 / 內文摘要"
-      class="search-input"
-    />
-  )}
+  {q && <input type="hidden" name="q" value={q} />}
 
   {important && <input type="hidden" name="important" value="1" />}
 
@@ -136,15 +126,6 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
     flex-direction: column;
     gap: var(--space-3);
     margin-bottom: var(--space-6);
-  }
-
-  .search-input {
-    width: 100%;
-    padding: var(--space-3) var(--space-5);
-    border-radius: var(--radius-full);
-    border: 1px solid var(--color-border);
-    background: var(--color-bg-secondary);
-    color: var(--color-text);
   }
 
   .filter-row {

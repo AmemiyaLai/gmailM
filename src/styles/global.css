@@ -14,32 +14,8 @@
    1. CSS 自定義屬性（設計 Token）
    ───────────────────────────────────────────────────── */
 :root,
-:root[data-theme="light"] {
-  /* 顏色系統（亮色主題，預設） */
-  --color-bg: #ffffff;
-  --color-bg-secondary: #f6f8fc;
-  --color-bg-tertiary: #eef1f6;
-  --color-surface: #ffffff;
-
-  --color-border: #dadce0;
-  --color-border-subtle: #e8eaed;
-
-  --color-text: #202124;
-  --color-text-secondary: #5f6368;
-  --color-text-tertiary: #80868b;
-
-  --color-primary: #6366f1;
-  --color-primary-hover: #4f46e5;
-  --color-primary-muted: rgba(99, 102, 241, 0.12);
-
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-info: #3b82f6;
-}
-
 :root[data-theme="dark"] {
-  /* 顏色系統（暗色主題） */
+  /* 顏色系統（暗色主題，預設） */
   --color-bg: #09090b;
   --color-bg-secondary: #18181b;
   --color-bg-tertiary: #27272a;
@@ -55,6 +31,30 @@
   --color-primary: #6366f1;
   --color-primary-hover: #818cf8;
   --color-primary-muted: rgba(99, 102, 241, 0.15);
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+}
+
+:root[data-theme="light"] {
+  /* 顏色系統（亮色主題） */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f6f8fc;
+  --color-bg-tertiary: #eef1f6;
+  --color-surface: #ffffff;
+
+  --color-border: #dadce0;
+  --color-border-subtle: #e8eaed;
+
+  --color-text: #202124;
+  --color-text-secondary: #5f6368;
+  --color-text-tertiary: #80868b;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-muted: rgba(99, 102, 241, 0.12);
 
   --color-success: #22c55e;
   --color-warning: #f59e0b;

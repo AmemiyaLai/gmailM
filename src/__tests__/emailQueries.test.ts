@@ -6,6 +6,7 @@ const mockQuery = {
   ilike: vi.fn().mockReturnThis(),
   gte: vi.fn().mockReturnThis(),
   lte: vi.fn().mockReturnThis(),
+  lt: vi.fn().mockReturnThis(),
   order: vi.fn().mockReturnThis(),
   range: vi.fn().mockReturnThis(),
   limit: vi.fn().mockReturnThis(),
@@ -30,6 +31,11 @@ import {
   getLatestSummary,
   listEmails,
   getSenderStats,
+  getFirstSenderEvents,
+  getSenderGroupUnreadCounts,
+  listEmailsByGroup,
+  getSenderGroupTopSenders,
+  getAnalyticsEmails,
 } from "../lib/emailQueries";
 
 describe("emailQueries", () => {
@@ -40,6 +46,7 @@ describe("emailQueries", () => {
     mockQuery.ilike.mockReturnThis();
     mockQuery.gte.mockReturnThis();
     mockQuery.lte.mockReturnThis();
+    mockQuery.lt.mockReturnThis();
     mockQuery.order.mockReturnThis();
     mockQuery.range.mockReturnThis();
     mockQuery.limit.mockReturnThis();
@@ -341,6 +348,245 @@ describe("emailQueries", () => {
 
       const stats = await getSenderStats();
       expect(stats).toEqual([]);
+    });
+  });
+
+  describe("listEmails() offset 參數", () => {
+    it("offset 應影響 range 呼叫", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null, count: 0 });
+
+      await listEmails({ offset: 20, limit: 10 });
+      expect(mockQuery.range).toHaveBeenCalledWith(20, 30);
+    });
+  });
+
+  describe("getFirstSenderEvents()", () => {
+    it("應回傳事件列表", async () => {
+      const events = [
+        {
+          sender_address: "alice@example.com",
+          first_email_id: "msg-1",
+          sender_display: "Alice",
+          first_received_at: "2026-07-26T08:00:00Z",
+          source: "live",
+          notification_status: "sent",
+          notification_attempts: 1,
+          last_notification_error: null,
+          notified_at: "2026-07-26T08:01:00Z",
+        },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: events, error: null });
+
+      const result = await getFirstSenderEvents();
+      expect(result).toHaveLength(1);
+      expect(result[0].sender_address).toBe("alice@example.com");
+    });
+
+    it("data 為 null 應回傳空陣列", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: null, error: null });
+
+      const result = await getFirstSenderEvents();
+      expect(result).toEqual([]);
+    });
+
+    it("自訂 limit 參數", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null });
+
+      await getFirstSenderEvents(10);
+      expect(mockQuery.limit).toHaveBeenCalledWith(10);
+    });
+  });
+
+  describe("getSenderGroupUnreadCounts()", () => {
+    const mockGroups = [
+      { id: "banking", label: "銀行", icon: "🏦", colorVar: "--color-success", patterns: ["bank", "esun"] },
+      { id: "devtools", label: "開發", icon: "💻", colorVar: "--color-info", patterns: ["github", "gitlab"] },
+      { id: "others", label: "其他", icon: "📦", colorVar: "--color-text-tertiary", patterns: [] },
+    ];
+
+    it("應回傳每個群組的未讀數量", async () => {
+      const senders = [
+        { sender: "esun@bank.com" },
+        { sender: "esun@bank.com" },
+        { sender: "noreply@github.com" },
+        { sender: "random@example.com" },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: senders, error: null });
+
+      const result = await getSenderGroupUnreadCounts(mockGroups);
+      expect(result.banking).toBe(2);
+      expect(result.devtools).toBe(1);
+      expect(result.others).toBe(1);
+    });
+
+    it("無未讀郵件時全部應為 0", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null });
+
+      const result = await getSenderGroupUnreadCounts(mockGroups);
+      expect(result.banking).toBe(0);
+      expect(result.devtools).toBe(0);
+      expect(result.others).toBe(0);
+    });
+
+    it("data 為 null 應回傳全 0", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: null, error: null });
+
+      const result = await getSenderGroupUnreadCounts(mockGroups);
+      expect(result.others).toBe(0);
+    });
+  });
+
+  describe("listEmailsByGroup()", () => {
+    const mockGroups = [
+      { id: "banking", label: "銀行", icon: "🏦", colorVar: "--color-success", patterns: ["bank", "esun"] },
+      { id: "devtools", label: "開發", icon: "💻", colorVar: "--color-info", patterns: ["github"] },
+      { id: "others", label: "其他", icon: "📦", colorVar: "--color-text-tertiary", patterns: [] },
+    ];
+
+    it("正常群組應回傳匹配的未讀郵件", async () => {
+      const rows = [
+        {
+          id: "1", sender: "esun@bank.com", subject: "Bank Alert", snippet: "alert",
+          received_at: "2026-07-26T08:00:00Z", is_read: false, category: null, labels: [],
+        },
+        {
+          id: "2", sender: "noreply@github.com", subject: "GitHub", snippet: "notification",
+          received_at: "2026-07-26T09:00:00Z", is_read: false, category: null, labels: [],
+        },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await listEmailsByGroup(mockGroups, "banking");
+      expect(result.emails).toHaveLength(1);
+      expect(result.emails[0].sender).toBe("esun@bank.com");
+    });
+
+    it("「其他」群組應回傳不匹配任何群組的未讀郵件", async () => {
+      const rows = [
+        {
+          id: "1", sender: "esun@bank.com", subject: "Bank", snippet: "alert",
+          received_at: "2026-07-26T08:00:00Z", is_read: false, category: null, labels: [],
+        },
+        {
+          id: "2", sender: "random@example.com", subject: "Hello", snippet: "hi",
+          received_at: "2026-07-26T09:00:00Z", is_read: false, category: null, labels: [],
+        },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await listEmailsByGroup(mockGroups, "others");
+      expect(result.emails).toHaveLength(1);
+      expect(result.emails[0].sender).toBe("random@example.com");
+    });
+
+    it("不存在的 groupId 應回傳空陣列", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null });
+
+      const result = await listEmailsByGroup(mockGroups, "nonexistent");
+      expect(result.emails).toEqual([]);
+      expect(result.hasMore).toBe(false);
+    });
+
+    it("hasMore 應正確判斷", async () => {
+      // 建立 3 封匹配的郵件，但 limit=2
+      const rows = Array.from({ length: 3 }, (_, i) => ({
+        id: String(i), sender: "esun@bank.com", subject: "s", snippet: "n",
+        received_at: `2026-07-26T0${8 + i}:00:00Z`, is_read: false, category: null, labels: [],
+      }));
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await listEmailsByGroup(mockGroups, "banking", { limit: 2 });
+      expect(result.hasMore).toBe(true);
+      expect(result.emails).toHaveLength(2);
+    });
+  });
+
+  describe("getSenderGroupTopSenders()", () => {
+    const mockGroups = [
+      { id: "banking", label: "銀行", icon: "🏦", colorVar: "--color-success", patterns: ["bank"] },
+      { id: "others", label: "其他", icon: "📦", colorVar: "--color-text-tertiary", patterns: [] },
+    ];
+
+    it("應回傳每個群組中前 N 名寄件者", async () => {
+      const rows = [
+        { sender: "alice@bank.com" },
+        { sender: "alice@bank.com" },
+        { sender: "alice@bank.com" },
+        { sender: "bob@bank.com" },
+        { sender: "bob@bank.com" },
+        { sender: "random@example.com" },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await getSenderGroupTopSenders(mockGroups, 3);
+      expect(result.banking).toHaveLength(2);
+      expect(result.banking[0].sender).toBe("alice@bank.com");
+      expect(result.banking[0].count).toBe(3);
+      expect(result.banking[1].sender).toBe("bob@bank.com");
+      expect(result.banking[1].count).toBe(2);
+    });
+
+    it("「其他」群組應回傳不匹配的 top 寄件者", async () => {
+      const rows = [
+        { sender: "random@example.com" },
+        { sender: "random@example.com" },
+        { sender: "other@test.com" },
+      ];
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await getSenderGroupTopSenders(mockGroups, 3);
+      expect(result.others).toHaveLength(2);
+      expect(result.others[0].sender).toBe("random@example.com");
+      expect(result.others[0].count).toBe(2);
+    });
+
+    it("預設 topN 應為 3", async () => {
+      const rows = Array.from({ length: 10 }, (_, i) => ({
+        sender: `user${i}@bank.com`,
+      }));
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: rows, error: null });
+
+      const result = await getSenderGroupTopSenders(mockGroups);
+      expect(result.banking.length).toBeLessThanOrEqual(3);
+    });
+  });
+
+  describe("getAnalyticsEmails()", () => {
+    it("應分頁讀取所有郵件", async () => {
+      let callCount = 0;
+      mockQuery.then = (resolve: (v: unknown) => void) => {
+        callCount++;
+        if (callCount === 1) {
+          resolve({ data: Array.from({ length: 1000 }, (_, i) => ({ sender: `a${i}@test.com`, received_at: "2026-07-26T00:00:00Z", category: null, is_read: false, is_important: false, subject: "s", snippet: "n", body_plain: "" })), error: null });
+        } else {
+          resolve({ data: [{ sender: "a@test.com", received_at: "2026-07-26T01:00:00Z", category: null, is_read: false, is_important: false, subject: "s", snippet: "n", body_plain: "" }], error: null });
+        }
+      };
+
+      const result = await getAnalyticsEmails({ from: "2026-07-25", to: "2026-07-27" });
+      expect(result.length).toBeGreaterThanOrEqual(1000);
+    });
+
+    it("空範圍應回傳空陣列", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null });
+
+      const result = await getAnalyticsEmails({ from: "2026-07-25", to: "2026-07-26" });
+      expect(result).toEqual([]);
     });
   });
 });

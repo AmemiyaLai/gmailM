@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Gmail 即時監控面板 — Astro SSR + Supabase + Pusher",
   "engines": {
-    "node": "^22.12.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "astro dev",

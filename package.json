@@ -1,21 +1,15 @@
 {
-  "name": "astro-base-template",
+  "name": "gmail-monitor-panel",
   "type": "module",
   "version": "0.1.0",
-  "description": "Astro 基礎專案範本，內含設計系統、SEO 元件、Cloudflare Pages、D1 與 Git Flow 配置",
+  "description": "Gmail 即時監控面板 — Astro SSR + Supabase + Pusher",
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.12.0"
   },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "cf:login": "wrangler login",
-    "cf:pages:deploy": "npm run build && wrangler pages deploy dist",
-    "cf:d1:create": "wrangler d1 create astro-template-db",
-    "cf:d1:migrate:local": "wrangler d1 migrations apply astro-template-db --local",
-    "cf:d1:migrate:remote": "wrangler d1 migrations apply astro-template-db --remote",
-    "cf:dev": "wrangler pages dev dist",
     "check:routes": "node scripts/check-routes.mjs",
     "check:all": "npm run type-check && npm run test:unit && npm run check:routes && npm run build",
     "astro": "astro",
@@ -30,17 +24,21 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@amemiyalai/wiki-center": "github:AmemiyaLai/wiki-center#v0.2.4",
-    "astro": "^7.1.1"
+    "@astrojs/vercel": "^11.0.3",
+    "@supabase/supabase-js": "^2.110.8",
+    "astro": "^7.1.1",
+    "google-auth-library": "^10.9.1",
+    "googleapis": "^173.0.0",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.6.0",
+    "supabase": "^2.109.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
-    "@cloudflare/workers-types": "^5.20260719.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.27.0"
+    "vitest": "^4.1.10"
   }
 }

@@ -2,12 +2,9 @@ import { existsSync } from "node:fs";
 
 const requiredRoutes = [
   "src/pages/index.astro",
-  "src/pages/knowledge/index.astro",
-  "src/pages/knowledge/[...slug].astro",
-  "src/pages/search.astro",
-  "src/pages/about.astro",
   "src/pages/404.astro",
-  "functions/api/health.ts",
+  "src/pages/api/webhook/gmail.ts",
+  "src/pages/api/gmail/watch-renew.ts",
 ];
 
 const missing = requiredRoutes.filter((file) => !existsSync(file));

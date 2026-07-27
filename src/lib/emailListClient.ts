@@ -42,6 +42,19 @@ export function initEmailList(container: HTMLElement): void {
     return container.querySelector(`[data-id="${CSS.escape(id)}"]`);
   }
 
+  function removeRow(row: HTMLElement) {
+    const group = row.closest("details.sender-group") as HTMLElement | null;
+    row.remove();
+    if (!group) return;
+    const remaining = group.querySelectorAll(".email-row").length;
+    if (remaining === 0) {
+      group.remove();
+      return;
+    }
+    const badge = group.querySelector(".sender-group-header .badge") as HTMLElement | null;
+    if (badge) badge.textContent = `${remaining} 封`;
+  }
+
   async function runBulkAction(ids: string[], action: BulkAction) {
     if (ids.length === 0) return;
     try {
@@ -58,7 +71,7 @@ export function initEmailList(container: HTMLElement): void {
         if (!row) continue;
         if (action === "read") {
           if (unreadOnly) {
-            row.remove();
+            removeRow(row);
           } else {
             row.dataset.read = "true";
             row.classList.remove("email-row--unread");
@@ -66,7 +79,7 @@ export function initEmailList(container: HTMLElement): void {
             if (checkbox) checkbox.checked = false;
           }
         } else {
-          row.remove();
+          removeRow(row);
         }
       }
     } catch (err) {
@@ -164,7 +177,7 @@ export function initEmailList(container: HTMLElement): void {
           });
           if (res.ok) {
             if (nextRead && unreadOnly) {
-              row.remove();
+              removeRow(row);
             } else {
               row.dataset.read = nextRead ? "true" : "false";
               row.classList.toggle("email-row--unread", !nextRead);

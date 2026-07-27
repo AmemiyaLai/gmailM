@@ -20,6 +20,7 @@ function syncGroupSelectAll(group: HTMLElement) {
 
 export function initEmailList(container: HTMLElement): void {
   const selected = new Set<string>();
+  const unreadOnly = container.dataset.unreadOnly === "true";
 
   const toolbar = document.createElement("div");
   toolbar.className = "bulk-toolbar";
@@ -41,6 +42,19 @@ export function initEmailList(container: HTMLElement): void {
     return container.querySelector(`[data-id="${CSS.escape(id)}"]`);
   }
 
+  function removeRow(row: HTMLElement) {
+    const group = row.closest("details.sender-group") as HTMLElement | null;
+    row.remove();
+    if (!group) return;
+    const remaining = group.querySelectorAll(".email-row").length;
+    if (remaining === 0) {
+      group.remove();
+      return;
+    }
+    const badge = group.querySelector(".sender-group-header .badge") as HTMLElement | null;
+    if (badge) badge.textContent = `${remaining} 封`;
+  }
+
   async function runBulkAction(ids: string[], action: BulkAction) {
     if (ids.length === 0) return;
     try {
@@ -56,12 +70,16 @@ export function initEmailList(container: HTMLElement): void {
         selected.delete(id);
         if (!row) continue;
         if (action === "read") {
-          row.dataset.read = "true";
-          row.classList.remove("email-row--unread");
-          const checkbox = row.querySelector(".email-checkbox") as HTMLInputElement | null;
-          if (checkbox) checkbox.checked = false;
+          if (unreadOnly) {
+            removeRow(row);
+          } else {
+            row.dataset.read = "true";
+            row.classList.remove("email-row--unread");
+            const checkbox = row.querySelector(".email-checkbox") as HTMLInputElement | null;
+            if (checkbox) checkbox.checked = false;
+          }
         } else {
-          row.remove();
+          removeRow(row);
         }
       }
     } catch (err) {
@@ -158,9 +176,13 @@ export function initEmailList(container: HTMLElement): void {
             body: JSON.stringify({ read: nextRead }),
           });
           if (res.ok) {
-            row.dataset.read = nextRead ? "true" : "false";
-            row.classList.toggle("email-row--unread", !nextRead);
-            actionBtn.title = nextRead ? "標示為未讀" : "標示為已讀";
+            if (nextRead && unreadOnly) {
+              removeRow(row);
+            } else {
+              row.dataset.read = nextRead ? "true" : "false";
+              row.classList.toggle("email-row--unread", !nextRead);
+              actionBtn.title = nextRead ? "標示為未讀" : "標示為已讀";
+            }
           }
         } catch (err) {
           console.error("Read toggle failed:", err);

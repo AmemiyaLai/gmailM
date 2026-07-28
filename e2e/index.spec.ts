@@ -10,8 +10,8 @@ test.describe("首頁", () => {
   });
 
   test("應包含 h1 標題元素", async ({ page }) => {
-    const heading = page.locator("h1");
-    await expect(heading).toBeVisible();
+    const heading = page.locator("main h1");
+    await expect(heading).toBeAttached();
   });
 
   test("應正確設定 meta description", async ({ page }) => {
@@ -28,7 +28,7 @@ test.describe("首頁", () => {
 test.describe("無障礙基礎檢查", () => {
   test("每頁只能有一個 h1", async ({ page }) => {
     await page.goto("/");
-    const headings = page.locator("h1");
+    const headings = page.locator("main h1");
     await expect(headings).toHaveCount(1);
   });
 

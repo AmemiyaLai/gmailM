@@ -107,7 +107,7 @@ export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<
 
   const siteUrl = import.meta.env.SITE_URL;
 
-  await fetch(webhookUrl, {
+  const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -130,4 +130,6 @@ export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<
       ],
     }),
   });
+  if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
 }
+

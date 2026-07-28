@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
   mockSyncEmailsFromGmail, mockSummarizeUnreadEmails, mockSendDiscordSummary, mockGetSupabase,
@@ -67,7 +67,22 @@ function setupSupabaseChain(opts: {
 describe("GET /api/gmail/hourly-summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-28T10:00:00+08:00"));
     vi.stubEnv("CRON_SECRET", "test-secret");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("安靜時段（1:00-7:00）應跳過處理", async () => {
+    vi.setSystemTime(new Date("2026-07-28T03:00:00+08:00"));
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("skipped");
+    expect(body.reason).toBe("quiet hours");
   });
 
   it("無 Authorization header 應回傳 401", async () => {

@@ -181,4 +181,46 @@ describe("syncEmailsFromGmail()", () => {
     const upsertCall = mockUpsert.mock.calls[0][0];
     expect(upsertCall.category).toBe("devlog");
   });
+
+  it("當產生 firstEvent 時應更新 is_first_sender 欄位，失敗時計入 failed", async () => {
+    const mockUpdate = vi.fn().mockResolvedValue({ error: { message: "update failed" } });
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === "emails") {
+        return {
+          upsert: mockUpsert,
+          update: mockUpdate,
+        };
+      }
+      return {
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: { sender_address: "new@example.com" }, error: null }),
+          }),
+        }),
+      };
+    });
+
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from: mockFrom } as never);
+
+    mockListMessages.mockResolvedValue(["msg-new"]);
+    mockGetMessage.mockResolvedValue({
+      id: "msg-new",
+      threadId: "t1",
+      sender: "New Sender <new@example.com>",
+      recipient: "me@example.com",
+      subject: "Welcome",
+      snippet: "hi",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: [],
+      receivedAt: new Date(),
+      isRead: false,
+    });
+
+    const result = await syncEmailsFromGmail(1);
+    expect(result.failed).toBe(1);
+    expect(result.imported).toBe(0);
+  });
 });
+

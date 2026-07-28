@@ -189,6 +189,64 @@ describe("refreshSenderTags()", () => {
     expect(result.processed).toBe(0);
     expect(judgeSenderTag).not.toHaveBeenCalled();
   });
+
+  it("當規則無法判定且 Gemini 回傳高信心度有效標籤時應使用該標籤", async () => {
+    vi.mocked(judgeSenderTag).mockResolvedValueOnce({ tag: "travel", confidence: 0.9 });
+
+    const emails = [
+      { sender: "Unknown Sender <unknown@test.com>", sender_address: "unknown@test.com", subject: "Flight booking", snippet: "ticket info" },
+      { sender: "Unknown Sender <unknown@test.com>", sender_address: "unknown@test.com", subject: "Flight booking 2", snippet: "ticket info 2" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(1);
+    expect(judgeSenderTag).toHaveBeenCalled();
+  });
+
+  it("當 Gemini 發生例外或低信心度時應降級為 other 標籤", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(judgeSenderTag).mockRejectedValueOnce(new Error("Gemini fail"));
+
+    const emails = [
+      { sender: "Random Sender <random@test.com>", sender_address: "random@test.com", subject: "Hello", snippet: "world" },
+      { sender: "Random Sender <random@test.com>", sender_address: "random@test.com", subject: "Hello 2", snippet: "world 2" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(1);
+    expect(consoleSpy).toHaveBeenCalledWith("Sender tag judge failed:", expect.any(Error));
+    consoleSpy.mockRestore();
+  });
 });
 
 describe("setManualSenderTag()", () => {
@@ -229,7 +287,7 @@ describe("getSenderTags()", () => {
     ];
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({ data: rows }),
+        select: vi.fn().mockResolvedValue({ data: rows, error: null }),
       }),
     };
 
@@ -243,12 +301,27 @@ describe("getSenderTags()", () => {
   it("空資料應回傳空 Map", async () => {
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({ data: null }),
+        select: vi.fn().mockResolvedValue({ data: null, error: null }),
       }),
     };
 
     const result = await getSenderTags(mockSupabase);
     expect(result).toBeInstanceOf(Map);
     expect(result.size).toBe(0);
+  });
+
+  it("發生 DB 載入錯誤時應記錄錯誤並回傳空 Map", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mockSupabase = {
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockResolvedValue({ data: null, error: { message: "db select error" } }),
+      }),
+    };
+
+    const result = await getSenderTags(mockSupabase);
+    expect(result).toBeInstanceOf(Map);
+    expect(result.size).toBe(0);
+    expect(consoleSpy).toHaveBeenCalledWith("Unable to load sender tags:", expect.any(Object));
+    consoleSpy.mockRestore();
   });
 });

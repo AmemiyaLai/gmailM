@@ -112,6 +112,38 @@ describe("GET /api/gmail/first-sender-retry", () => {
     expect(body.sent).toBe(0);
   });
 
+  it("deliverFirstSenderNotification 回傳 false 時 sent 不應增加", async () => {
+    mockDeliverFirstSenderNotification.mockResolvedValueOnce(false);
+    const rows = [
+      {
+        sender_address: "a@test.com",
+        first_email_id: "1",
+        sender_display: "A",
+        first_received_at: "2026-01-01",
+        source: "live",
+        notification_status: "pending",
+        notification_attempts: 0,
+        last_notification_error: null,
+        notified_at: null,
+        emails: {
+          thread_id: "t1",
+          sender: "A <a@test.com>",
+          subject: "Hello",
+          snippet: "Hi",
+          received_at: "2026-01-01T00:00:00Z",
+          category: "devlog",
+          labels: ["INBOX"],
+        },
+      },
+    ];
+    setupSupabase(rows);
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.attempted).toBe(1);
+    expect(body.sent).toBe(0);
+  });
+
   it("DB 錯誤時應回傳 500", async () => {
     const chain = {
       select: vi.fn().mockReturnThis(),
@@ -119,8 +151,9 @@ describe("GET /api/gmail/first-sender-retry", () => {
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue({ data: null, error: { message: "db error" } }),
     };
-  mockGetSupabase.mockReturnValue({ from: vi.fn(() => chain) } as never);
+    mockGetSupabase.mockReturnValue({ from: vi.fn(() => chain) } as never);
     const res = await GET(makeContext("Bearer test-secret"));
     expect(res.status).toBe(500);
   });
 });
+

@@ -145,4 +145,23 @@ describe("deliverFirstSenderNotification()", () => {
     expect(result).toBe(false);
     expect(sendFirstSenderDiscordNotification).toHaveBeenCalled();
   });
+
+  it("當更新 sent 狀態發生 DB 錯誤時應 capture 例外並標記為 failed", async () => {
+    const mockSupabase = {
+      from: vi.fn().mockReturnValue({
+        update: vi.fn().mockImplementation((data: { notification_status?: string }) => ({
+          eq: vi.fn().mockImplementation((_col: string, _val: unknown) => {
+            if (data.notification_status === "sent") {
+              return Promise.resolve({ error: { message: "db update failed" } });
+            }
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      }),
+    };
+
+    const result = await deliverFirstSenderNotification(mockSupabase, event, email);
+    expect(result).toBe(false);
+  });
 });
+

@@ -213,11 +213,38 @@ describe("sendDiscordSummary()", () => {
     await sendDiscordSummary(summary);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("SITE_URL 為空時 url 應為 undefined", async () => {
+    vi.stubEnv("SITE_URL", "");
+    const summary = {
+      summaryText: "s",
+      emailCount: 0,
+      periodStart: new Date(),
+      periodEnd: new Date(),
+    };
+
+    await sendDiscordSummary(summary);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].url).toBeUndefined();
+  });
+
+  it("Discord 回傳錯誤 status 時應拋出例外", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    const summary = {
+      summaryText: "s",
+      emailCount: 1,
+      periodStart: new Date(),
+      periodEnd: new Date(),
+    };
+
+    await expect(sendDiscordSummary(summary)).rejects.toThrow("Discord webhook failed (500)");
+  });
 });
 
 describe("sendFirstSenderDiscordNotification()", () => {
   beforeEach(() => {
     vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/123/abc");
+    vi.stubEnv("SITE_URL", "https://gmail-monitor.vercel.app");
     fetchMock.mockReset();
     fetchMock.mockResolvedValue({ ok: true, status: 204 });
   });
@@ -236,6 +263,19 @@ describe("sendFirstSenderDiscordNotification()", () => {
     expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "安全建議").value).toContain("勿直接開啟");
   });
 
+  it("無 sender, snippet 且 SITE_URL 為空時應採用預設降級與不含管理頁面欄位", async () => {
+    vi.stubEnv("SITE_URL", "");
+    await sendFirstSenderDiscordNotification({
+      threadId: "thread-2", sender: "", senderAddress: "empty@example.com",
+      subject: "", snippet: "", receivedAt: new Date(),
+      category: null, labels: [],
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "寄件者").value).toBe("(未知)");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "摘要").value).toBe("(無內容)");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "管理頁面")).toBeUndefined();
+  });
+
   it("Discord 回傳錯誤時應拋出例外", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
     await expect(sendFirstSenderDiscordNotification({
@@ -244,3 +284,4 @@ describe("sendFirstSenderDiscordNotification()", () => {
     })).rejects.toThrow("Discord webhook failed (500)");
   });
 });
+

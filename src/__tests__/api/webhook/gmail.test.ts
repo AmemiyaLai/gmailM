@@ -254,4 +254,53 @@ describe("POST /api/webhook/gmail", () => {
     await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
     expect(mockRefreshSenderTags).toHaveBeenCalled();
   });
+
+  it("當郵件不重要時不應發送 Discord 通知", async () => {
+    setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-unimportant" }] });
+    mockGetMessage.mockResolvedValue({
+      id: "msg-unimportant",
+      threadId: "t-1",
+      sender: "Test <test@example.com>",
+      recipient: "me@gmail.com",
+      subject: "Test",
+      snippet: "snippet",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: ["INBOX"],
+      receivedAt: new Date(),
+      isRead: false,
+    });
+    mockJudgeEmailImportance.mockResolvedValueOnce({ important: false, reason: "廣告" });
+
+    await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+    expect(mockSendDiscordNotification).not.toHaveBeenCalled();
+  });
+
+  it("當 Discord 通知拋出異常時應 capture 錯誤不中斷處理", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-discord-err" }] });
+    mockGetMessage.mockResolvedValue({
+      id: "msg-discord-err",
+      threadId: "t-1",
+      sender: "Test <test@example.com>",
+      recipient: "me@gmail.com",
+      subject: "Test",
+      snippet: "snippet",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: ["INBOX"],
+      receivedAt: new Date(),
+      isRead: false,
+    });
+    mockJudgeEmailImportance.mockResolvedValueOnce({ important: true, reason: "緊急" });
+    mockSendDiscordNotification.mockRejectedValueOnce(new Error("discord webhook fail"));
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+    expect(res.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to send Discord notification"), expect.any(Error));
+    consoleSpy.mockRestore();
+  });
 });
+

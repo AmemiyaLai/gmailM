@@ -203,4 +203,33 @@ describe("judgeSenderTag()", () => {
       }),
     );
   });
+
+  it("當 res.text 為 undefined 時應退回預設值 other + 0", async () => {
+    generateContentMock.mockResolvedValue({ text: undefined });
+
+    const result = await judgeSenderTag({
+      sender: "x@y.com",
+      subject: "s",
+      snippet: "n",
+    });
+
+    expect(result.tag).toBe("other");
+    expect(result.confidence).toBe(0);
+  });
 });
+
+describe("judgeEmailImportance() - fallback branches", () => {
+  it("當 res.text 為 undefined 時應退回 important=false, reason=undefined", async () => {
+    generateContentMock.mockResolvedValue({ text: undefined });
+
+    const result = await judgeEmailImportance({
+      sender: "test@example.com",
+      subject: "subject",
+      snippet: "snippet",
+    });
+
+    expect(result.important).toBe(false);
+    expect(result.reason).toBeUndefined();
+  });
+});
+

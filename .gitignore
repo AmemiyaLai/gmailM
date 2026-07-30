@@ -66,5 +66,8 @@ scripts/credentials/
 *.log
 COVERAGE.md
 coverage-report.txt
+nul
+nul/
+
 
 

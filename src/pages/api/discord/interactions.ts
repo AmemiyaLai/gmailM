@@ -53,6 +53,32 @@ function ephemeral(content: string): Response {
   return json({ type: RESPONSE_CHANNEL_MESSAGE, data: { content, flags: EPHEMERAL } });
 }
 
+async function handledEmbed(reviewId: string): Promise<Response> {
+  const review = await getReview(reviewId);
+  return updateMessage(buildCleanupResultEmbed(review?.action ?? "trash", "already-handled"));
+}
+
+async function handleCleanupAction(action: string, reviewId: string): Promise<Response> {
+  if (action === "approve") {
+    const result = await approveReview(reviewId);
+    if (result.status === "already-handled") return handledEmbed(reviewId);
+    if (result.status === "approved") {
+      return updateMessage(buildCleanupResultEmbed(result.action, "approved", {
+        processedCount: result.processedCount,
+        failedCount: result.failedCount,
+      }));
+    }
+  }
+  if (action === "reject") {
+    const result = await rejectReview(reviewId);
+    if (result.status === "already-handled") return handledEmbed(reviewId);
+    if (result.status === "rejected") {
+      return updateMessage(buildCleanupResultEmbed(result.action, "rejected", { emailCount: result.emailCount }));
+    }
+  }
+  return ephemeral("無法辨識的按鈕動作。");
+}
+
 export const POST: APIRoute = async ({ request }) => {
   const publicKey = import.meta.env.DISCORD_PUBLIC_KEY;
   if (!publicKey) {
@@ -91,34 +117,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    if (action === "approve") {
-      const result = await approveReview(reviewId);
-      if (result.status === "already-handled") {
-        const review = await getReview(reviewId);
-        return updateMessage(buildCleanupResultEmbed(review?.action ?? "trash", "already-handled"));
-      }
-      if (result.status === "approved") {
-        return updateMessage(
-          buildCleanupResultEmbed(result.action, "approved", {
-            processedCount: result.processedCount,
-            failedCount: result.failedCount,
-          }),
-        );
-      }
-    }
-
-    if (action === "reject") {
-      const result = await rejectReview(reviewId);
-      if (result.status === "already-handled") {
-        const review = await getReview(reviewId);
-        return updateMessage(buildCleanupResultEmbed(review?.action ?? "trash", "already-handled"));
-      }
-      if (result.status === "rejected") {
-        return updateMessage(buildCleanupResultEmbed(result.action, "rejected", { emailCount: result.emailCount }));
-      }
-    }
-
-    return ephemeral("無法辨識的按鈕動作。");
+    return await handleCleanupAction(action, reviewId);
   } catch (err) {
     console.error("Discord interactions: 處理清理審核失敗:", err);
     return ephemeral("處理失敗，請稍後再試或改到 /cleanup 頁面確認狀態。");

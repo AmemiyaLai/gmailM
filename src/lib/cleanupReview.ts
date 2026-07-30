@@ -93,6 +93,32 @@ export type DispatchOneResult =
 
 export interface DispatchResult {
   results: DispatchOneResult[];
+  /** 因冷卻期而整批跳過時帶上，說明還要等多久 */
+  cooldown?: { retryAfterMs: number };
+}
+
+/**
+ * 兩次送審之間的最短間隔。
+ * /api/cleanup/dispatch 沒有 auth（給頁面按鈕用），沒有這道防線的話連點或外部重複請求
+ * 會把 Discord 洗版、並產生一堆重複審核單。
+ *
+ * 判斷依據是 DB 裡最新一筆 cleanup_reviews 的 created_at，而非行程內的變數——
+ * Vercel serverless 每次請求可能落在不同執行實例上，記憶體狀態不可靠。
+ */
+export const DISPATCH_COOLDOWN_MS = 5_000;
+
+/** 最近一次送審時間（含送出失敗的，失敗也算「已嘗試」，不該立刻重試） */
+async function lastDispatchAt(): Promise<Date | null> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("cleanup_reviews" as never)
+    .select("created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const row = data as { created_at?: string } | null;
+  return row?.created_at ? new Date(row.created_at) : null;
 }
 
 async function dispatchOne(action: CleanupAction): Promise<DispatchOneResult> {
@@ -136,8 +162,27 @@ async function dispatchOne(action: CleanupAction): Promise<DispatchOneResult> {
 /**
  * 掃描兩條審核線（trash / read）的候選郵件，各自送出一則 Discord 審核訊息。
  * 兩者互不影響：其中一邊送出失敗，另一邊仍會照常送出（回傳結果中各自標示狀態）。
+ *
+ * 冷卻期只在進入時檢查一次，因此同一次呼叫仍可送出 trash + read 兩則訊息，
+ * 但下一次呼叫必須等 DISPATCH_COOLDOWN_MS 之後。
  */
 export async function dispatchCleanupReview(): Promise<DispatchResult> {
+  const last = await lastDispatchAt();
+  if (last) {
+    const elapsed = Date.now() - last.getTime();
+    if (elapsed >= 0 && elapsed < DISPATCH_COOLDOWN_MS) {
+      const retryAfterMs = DISPATCH_COOLDOWN_MS - elapsed;
+      return {
+        cooldown: { retryAfterMs },
+        results: (["trash", "read"] as const).map((action) => ({
+          action,
+          status: "skipped" as const,
+          reason: "cooldown",
+        })),
+      };
+    }
+  }
+
   const results: DispatchOneResult[] = [];
 
   for (const action of ["trash", "read"] as const) {

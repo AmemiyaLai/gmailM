@@ -9,6 +9,9 @@ import { dispatchCleanupReview } from "../../../lib/cleanupReview";
  *
  * 一次掃描會分別處理「刪除」與「已讀」兩條審核線，各自最多送一則 Discord 訊息
  * （見 lib/cleanupReview.dispatchCleanupReview），回應中的 results 陣列會列出兩者結果。
+ *
+ * dispatchCleanupReview 內建 5 秒冷卻期，主要是擋 /api/cleanup/dispatch 被連點；
+ * 一天只跑兩次的排程不會受影響，但若排程被重複觸發，回應會帶 cooldown 欄位而不會重複送出。
  */
 export const GET: APIRoute = async ({ request }) => {
   const authHeader = request.headers.get("authorization");

@@ -225,6 +225,15 @@ const suggestions: { keyword: string; field: CleanupField; action: CleanupAction
       return (await res.json()) as { total: number; emails: PreviewEmail[] };
     }
 
+    /** 請求失敗時丟出的錯誤，額外帶上伺服器指定的冷卻時間（429 時會有） */
+    class RequestError extends Error {
+      retryAfterMs?: number;
+      constructor(message: string, retryAfterMs?: number) {
+        super(message);
+        this.retryAfterMs = retryAfterMs;
+      }
+    }
+
     async function sendJson(url: string, method: string, body: unknown) {
       const res = await fetch(url, {
         method,
@@ -232,7 +241,12 @@ const suggestions: { keyword: string; field: CleanupField; action: CleanupAction
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "請求失敗");
+      if (!res.ok) {
+        throw new RequestError(
+          data.error || "請求失敗",
+          typeof data.retryAfterMs === "number" ? data.retryAfterMs : undefined,
+        );
+      }
       return data;
     }
 
@@ -316,8 +330,35 @@ const suggestions: { keyword: string; field: CleanupField; action: CleanupAction
     });
 
     // ── 立即送審（會分別嘗試「刪除」與「已讀」兩條審核線）──
+    // 伺服器端已有 5 秒冷卻期（lib/cleanupReview.DISPATCH_COOLDOWN_MS）；
+    // 這裡再加一層前端冷卻，避免連點時白跑請求、也讓提示更即時。
+    const CLIENT_COOLDOWN_MS = 5000;
     const dispatchBtn = document.querySelector<HTMLButtonElement>("#dispatch-review");
+    let cooldownUntil = 0;
+    let cooldownTimer: number | undefined;
+
+    function startCooldown(ms: number) {
+      if (!dispatchBtn) return;
+      cooldownUntil = Date.now() + ms;
+      dispatchBtn.disabled = true;
+      const originalLabel = "立即送審至 Discord";
+
+      window.clearInterval(cooldownTimer);
+      cooldownTimer = window.setInterval(() => {
+        const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+        if (remaining <= 0) {
+          window.clearInterval(cooldownTimer);
+          dispatchBtn.disabled = false;
+          dispatchBtn.textContent = originalLabel;
+          return;
+        }
+        dispatchBtn.textContent = `請稍候 ${remaining} 秒`;
+      }, 250);
+    }
+
     dispatchBtn?.addEventListener("click", async () => {
+      if (Date.now() < cooldownUntil) return;
+
       dispatchBtn.disabled = true;
       setStatus("送出審核訊息中…");
       try {
@@ -334,11 +375,15 @@ const suggestions: { keyword: string; field: CleanupField; action: CleanupAction
         setStatus(summary || "沒有可送審的郵件。");
         if (results.some((r) => r.status === "ok")) {
           window.setTimeout(() => window.location.reload(), 1200);
+          return;
         }
+        startCooldown(CLIENT_COOLDOWN_MS);
       } catch (err) {
-        setStatus(err instanceof Error ? err.message : "送出失敗", "error");
-      } finally {
-        dispatchBtn.disabled = false;
+        const message = err instanceof Error ? err.message : "送出失敗";
+        setStatus(message, "error");
+        // 伺服器回 429 時依 retryAfterMs 冷卻，其他錯誤也給一段緩衝避免連續重試
+        const retryAfterMs = err instanceof RequestError ? err.retryAfterMs : undefined;
+        startCooldown(retryAfterMs ?? CLIENT_COOLDOWN_MS);
       }
     });
 

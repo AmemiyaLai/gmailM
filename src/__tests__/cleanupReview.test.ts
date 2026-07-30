@@ -13,7 +13,7 @@ vi.mock("../lib/gmail", () => ({ trashMessage: mockTrashMessage, markAsRead: moc
 vi.mock("../lib/discord", () => ({ sendCleanupReview: mockSendCleanupReview }));
 vi.mock("../lib/cleanupKeywords", () => ({ findCandidates: mockFindCandidates }));
 
-import { approveReview, dispatchCleanupReview, rejectReview, getReview, listReviews } from "../lib/cleanupReview";
+import { approveReview, dispatchCleanupReview, DISPATCH_COOLDOWN_MS, rejectReview, getReview, listReviews } from "../lib/cleanupReview";
 
 interface ChainCall {
   table: string;
@@ -212,7 +212,11 @@ describe("dispatchCleanupReview()", () => {
     mockSendCleanupReview.mockResolvedValue("discord-msg-1");
   });
 
+  /** dispatchCleanupReview 第一個查詢是取最近一次送審時間（冷卻期判斷） */
+  const noRecentDispatch = { data: null, error: null };
+
   it("兩條審核線都沒有命中時應各自回報 skipped", async () => {
+    mockSupabase([noRecentDispatch]);
     mockFindCandidates.mockResolvedValue([]);
 
     const result = await dispatchCleanupReview();
@@ -221,6 +225,7 @@ describe("dispatchCleanupReview()", () => {
       { action: "trash", status: "skipped", reason: "no matching emails" },
       { action: "read", status: "skipped", reason: "no matching emails" },
     ]);
+    expect(result.cooldown).toBeUndefined();
     expect(mockSendCleanupReview).not.toHaveBeenCalled();
   });
 
@@ -234,6 +239,7 @@ describe("dispatchCleanupReview()", () => {
     );
 
     mockSupabase([
+      noRecentDispatch,
       { data: pendingReview({ action: "trash", email_ids: ["m1"], email_count: 1 }), error: null }, // insert trash
       { data: null, error: null }, // 寫回 trash discord_message_id
       { data: pendingReview({ id: "review-2", action: "read", email_ids: ["m2"], email_count: 1 }), error: null }, // insert read
@@ -260,6 +266,7 @@ describe("dispatchCleanupReview()", () => {
     );
 
     mockSupabase([
+      noRecentDispatch,
       { data: pendingReview({ action: "trash", email_ids: ["m-trash"], email_count: 1 }), error: null },
       { data: null, error: null }, // 標記 trash 審核單為 failed
       { data: pendingReview({ id: "review-2", action: "read", email_ids: ["m-read"], email_count: 1 }), error: null },
@@ -271,5 +278,62 @@ describe("dispatchCleanupReview()", () => {
     expect(result.results[0]).toEqual({ action: "trash", status: "skipped", reason: "Bot token 未設定" });
     expect(result.results[1]).toEqual({ action: "read", status: "ok", reviewId: "review-2", emailCount: 1 });
     consoleSpy.mockRestore();
+  });
+});
+
+describe("dispatchCleanupReview() — 冷卻期", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSendCleanupReview.mockResolvedValue("discord-msg-1");
+    mockFindCandidates.mockResolvedValue([
+      { email: { id: "m1", sender: "a@x.com", subject: "優惠", snippet: "" }, keyword: "優惠" },
+    ]);
+  });
+
+  it("距離上次送審不到 5 秒時應整批跳過且不碰 Discord", async () => {
+    const oneSecondAgo = new Date(Date.now() - 1_000).toISOString();
+    mockSupabase([{ data: { created_at: oneSecondAgo }, error: null }]);
+
+    const result = await dispatchCleanupReview();
+
+    expect(result.cooldown?.retryAfterMs).toBeGreaterThan(0);
+    expect(result.cooldown?.retryAfterMs).toBeLessThanOrEqual(DISPATCH_COOLDOWN_MS);
+    expect(result.results).toEqual([
+      { action: "trash", status: "skipped", reason: "cooldown" },
+      { action: "read", status: "skipped", reason: "cooldown" },
+    ]);
+    expect(mockSendCleanupReview).not.toHaveBeenCalled();
+    expect(mockFindCandidates).not.toHaveBeenCalled();
+  });
+
+  it("超過冷卻期後應正常送出", async () => {
+    const longAgo = new Date(Date.now() - DISPATCH_COOLDOWN_MS - 1_000).toISOString();
+    mockSupabase([
+      { data: { created_at: longAgo }, error: null },
+      { data: pendingReview({ email_ids: ["m1"], email_count: 1 }), error: null },
+      { data: null, error: null },
+      { data: pendingReview({ id: "review-2", action: "read", email_ids: ["m1"], email_count: 1 }), error: null },
+      { data: null, error: null },
+    ]);
+
+    const result = await dispatchCleanupReview();
+
+    expect(result.cooldown).toBeUndefined();
+    expect(mockSendCleanupReview).toHaveBeenCalledTimes(2);
+  });
+
+  it("從未送審過（查無記錄）時不應被冷卻期擋住", async () => {
+    mockSupabase([
+      { data: null, error: null },
+      { data: pendingReview({ email_ids: ["m1"], email_count: 1 }), error: null },
+      { data: null, error: null },
+      { data: pendingReview({ id: "review-2", action: "read", email_ids: ["m1"], email_count: 1 }), error: null },
+      { data: null, error: null },
+    ]);
+
+    const result = await dispatchCleanupReview();
+
+    expect(result.cooldown).toBeUndefined();
+    expect(mockSendCleanupReview).toHaveBeenCalledTimes(2);
   });
 });

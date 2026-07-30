@@ -11,6 +11,10 @@ const requiredRoutes = [
   "src/pages/emails/index.astro",
   "src/pages/unread.astro",
   "src/pages/analytics.astro",
+  "src/pages/api/webhook/inbound-email.ts",
+  "src/pages/api/inbound/digest.ts",
+  "src/pages/inbound/index.astro",
+  "src/pages/inbound/[id].astro",
 ];
 
 const missing = requiredRoutes.filter((file) => !existsSync(file));

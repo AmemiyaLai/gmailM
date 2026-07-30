@@ -1,0 +1,213 @@
+---
+import SidebarLayout from "../../layouts/SidebarLayout.astro";
+import { getSupabase } from "../../lib/supabase";
+import { INBOUND_ATTACHMENT_BUCKET, type AttachmentMeta } from "../../lib/inboundEmailService";
+
+interface InboundEmailDetail {
+  id: string;
+  alias: string;
+  from_address: string;
+  from_display: string | null;
+  to_addresses: string[] | null;
+  subject: string | null;
+  snippet: string | null;
+  body_html: string | null;
+  body_plain: string | null;
+  attachments: AttachmentMeta[] | null;
+  is_read: boolean;
+  received_at: string;
+}
+
+const { id } = Astro.params;
+
+if (!id) {
+  return new Response("找不到這封郵件", { status: 404 });
+}
+
+const supabase = getSupabase();
+const { data } = await supabase
+  .from("inbound_emails" as never)
+  .select("id, alias, from_address, from_display, to_addresses, subject, snippet, body_html, body_plain, attachments, is_read, received_at")
+  .eq("id", id)
+  .maybeSingle();
+
+const email = data as InboundEmailDetail | null;
+
+if (!email) {
+  return new Response("找不到這封郵件", { status: 404 });
+}
+
+const { data: aliasRow } = await supabase
+  .from("inbound_aliases" as never)
+  .select("label, site, color")
+  .eq("alias", email.alias)
+  .maybeSingle();
+const aliasInfo = aliasRow as { label: string; site: string | null; color: string | null } | null;
+
+const attachments = email.attachments ?? [];
+const storage = (supabase as unknown as { storage?: { from: (bucket: string) => any } }).storage;
+
+// 有 storage_path 的附件產生 1 小時簽名下載連結；bucket 為私有，不可直接存取
+const attachmentLinks: { meta: AttachmentMeta; url: string | null }[] = [];
+for (const meta of attachments) {
+  let signedUrl: string | null = null;
+  if (meta.storage_path && storage) {
+    try {
+      const { data: signed } = await storage
+        .from(INBOUND_ATTACHMENT_BUCKET)
+        .createSignedUrl(meta.storage_path, 3600);
+      signedUrl = signed?.signedUrl ?? null;
+    } catch (err) {
+      console.error("附件簽名 URL 產生失敗:", err);
+    }
+  }
+  attachmentLinks.push({ meta, url: signedUrl });
+}
+
+function formatBytes(size: number): string {
+  if (size >= 1_048_576) return `${(size / 1_048_576).toFixed(1)} MB`;
+  if (size >= 1_024) return `${(size / 1_024).toFixed(1)} KB`;
+  return `${size} B`;
+}
+
+const aliasStyle = aliasInfo?.color ? `background:${aliasInfo.color}; color:#fff;` : "background:var(--color-bg-tertiary); color:var(--color-text-secondary);";
+---
+
+<SidebarLayout title={email.subject || "(無主旨)"} activeView="inbound">
+  <div style="max-width: var(--container-md); margin-inline: auto;">
+    <a href="/inbound" style="display:inline-flex; align-items:center; gap:var(--space-2); color:var(--color-text-tertiary); font-size:var(--font-size-sm); margin-bottom:var(--space-6);">
+      ← 回到站點收件匣
+    </a>
+
+    <div class="card" style="padding:var(--space-6);">
+      <div style="display:flex; align-items:center; gap:var(--space-2); margin-bottom:var(--space-3);">
+        <span class="badge" style={aliasStyle} title={`${email.alias}@`}>
+          {aliasInfo?.label ?? email.alias}
+        </span>
+        <span id="read-status" class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-tertiary);">
+          {email.is_read ? "已讀" : "未讀"}
+        </span>
+        <button type="button" id="toggle-read-btn" class="btn btn-outline" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);">
+          {email.is_read ? "標為未讀" : "標為已讀"}
+        </button>
+      </div>
+
+      <h1 style="font-size:var(--font-size-xl); margin-bottom:var(--space-4);">
+        {email.subject || "(無主旨)"}
+      </h1>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:var(--space-4); margin-bottom:var(--space-4); border-bottom:1px solid var(--color-border-subtle);">
+        <div style="font-size:var(--font-size-sm); color:var(--color-text-secondary);">
+          <div>
+            <strong style="color:var(--color-text);">寄件者：</strong>
+            {email.from_display ? `${email.from_display} <${email.from_address}>` : email.from_address}
+          </div>
+          <div><strong style="color:var(--color-text);">收件別名：</strong>{email.alias}@{aliasInfo?.site ? `（${aliasInfo.site}）` : ""}</div>
+        </div>
+        <time datetime={email.received_at} style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); white-space:nowrap;">
+          {new Date(email.received_at).toLocaleString("zh-TW")}
+        </time>
+      </div>
+
+      <div id="email-body">
+        {email.body_html ? (
+          <iframe
+            id="email-html-frame"
+            sandbox="allow-same-origin"
+            srcdoc={email.body_html}
+            style="width:100%; border:0; min-height:200px; background:white; border-radius:var(--radius-md);"
+          />
+        ) : email.body_plain ? (
+          <pre style="white-space:pre-wrap; word-break:break-word; font-family:var(--font-sans); font-size:var(--font-size-sm); color:var(--color-text-secondary);">{email.body_plain}</pre>
+        ) : (
+          <p style="color:var(--color-text-tertiary);">{email.snippet || "（沒有內文內容）"}</p>
+        )}
+      </div>
+
+      {attachmentLinks.length > 0 && (
+        <div style="margin-top:var(--space-6); padding-top:var(--space-4); border-top:1px solid var(--color-border-subtle);">
+          <h2 style="font-size:var(--font-size-sm); color:var(--color-text-secondary); margin-bottom:var(--space-3);">
+            附件（{attachmentLinks.length}）
+          </h2>
+          <ul style="list-style:none; display:flex; flex-direction:column; gap:var(--space-2);">
+            {attachmentLinks.map(({ meta, url }) => (
+              <li style="display:flex; align-items:center; gap:var(--space-2); font-size:var(--font-size-sm);">
+                <span class="material-symbols-rounded" style="font-size:16px; color:var(--color-text-tertiary);" aria-hidden="true">attach_file</span>
+                {url ? (
+                  <a href={url} target="_blank" rel="noopener noreferrer">{meta.filename}</a>
+                ) : (
+                  <span style="color:var(--color-text-tertiary);">{meta.filename}</span>
+                )}
+                <span style="color:var(--color-text-tertiary); font-size:var(--font-size-xs);">{formatBytes(meta.size)}</span>
+                {meta.dropped && (
+                  <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-tertiary);">已捨棄（超過 1MB）</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ emailId: email.id, isRead: email.is_read }}>
+    const frame = document.getElementById("email-html-frame");
+    if (frame) {
+      frame.addEventListener("load", () => {
+        try {
+          const doc = frame.contentDocument;
+          if (doc) {
+            const height = doc.documentElement.scrollHeight;
+            frame.style.height = `${height + 24}px`;
+          }
+        } catch {
+          // 無法讀取內容時保留預設高度
+        }
+      });
+    }
+
+    let currentIsRead = isRead;
+
+    if (!currentIsRead) {
+      fetch(`/api/inbound/${encodeURIComponent(emailId)}/read`, { method: "PATCH" })
+        .then((res) => {
+          if (res.ok) {
+            currentIsRead = true;
+            const statusEl = document.getElementById("read-status");
+            const btn = document.getElementById("toggle-read-btn");
+            if (statusEl) statusEl.textContent = "已讀";
+            if (btn) btn.textContent = "標為未讀";
+          }
+        })
+        .catch((err) => console.warn("標記已讀失敗：", err));
+    }
+
+    const toggleBtn = document.getElementById("toggle-read-btn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", async () => {
+        toggleBtn.disabled = true;
+        const nextRead = !currentIsRead;
+        try {
+          const res = await fetch(`/api/inbound/${encodeURIComponent(emailId)}/read`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ read: nextRead }),
+          });
+          if (res.ok) {
+            currentIsRead = nextRead;
+            const statusEl = document.getElementById("read-status");
+            if (statusEl) statusEl.textContent = nextRead ? "已讀" : "未讀";
+            toggleBtn.textContent = nextRead ? "標為未讀" : "標為已讀";
+          } else {
+            alert("切換已讀狀態失敗");
+          }
+        } catch (err) {
+          console.error("切換已讀狀態失敗：", err);
+          alert("切換已讀狀態失敗");
+        } finally {
+          toggleBtn.disabled = false;
+        }
+      });
+    }
+  </script>
+</SidebarLayout>

@@ -1,0 +1,10 @@
+name = "gmailm-inbound-email"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+WEBHOOK_URL = "https://gmailm.autodesignlab.org/api/webhook/inbound-email"
+
+# secret 以指令設定，不寫入本檔：
+#   npx wrangler secret put WEBHOOK_SECRET
+# （值需與 Vercel 環境變數 INBOUND_EMAIL_WEBHOOK_SECRET 相同）

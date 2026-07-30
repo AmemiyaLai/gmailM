@@ -319,6 +319,69 @@ export function buildCleanupResultEmbed(
   };
 }
 
+export interface InboundDigestPayload {
+  total: number;
+  unreadTotal: number;
+  perAlias: { alias: string; label: string; count: number }[];
+  topSenders: { fromAddress: string; count: number }[];
+  notableSubjects: string[];
+  periodStart: Date;
+  periodEnd: Date;
+}
+
+const INBOUND_DIGEST_COLOR = 0x5865f2; // blurple — 站點收件匣摘要
+
+export async function sendInboundDigest(digest: InboundDigestPayload): Promise<void> {
+  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  const siteUrl = import.meta.env.SITE_URL;
+  const aliasLines = digest.perAlias.map(
+    (item) => `\`${item.alias}\`（${item.label}）× ${item.count}`,
+  );
+  const senderLines = digest.topSenders.map(
+    (item) => `${truncate(item.fromAddress, 60)} × ${item.count}`,
+  );
+  const subjectLines = digest.notableSubjects.map(
+    (subject, i) => `${i + 1}. ${truncate(subject, 80)}`,
+  );
+
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [
+        {
+          title: "📮 站點收件匣摘要",
+          description: `這段期間共收到 **${digest.total}** 封站點郵件，未讀 **${digest.unreadTotal}** 封。`,
+          url: siteUrl ? `${siteUrl}/inbound` : undefined,
+          color: INBOUND_DIGEST_COLOR,
+          fields: [
+            ...(aliasLines.length > 0
+              ? [{ name: "各別名統計", value: truncate(aliasLines.join("\n"), 1024) }]
+              : []),
+            ...(senderLines.length > 0
+              ? [{ name: "常見寄件者", value: truncate(senderLines.join("\n"), 1024), inline: true }]
+              : []),
+            ...(subjectLines.length > 0
+              ? [{ name: "最新主旨", value: truncate(subjectLines.join("\n"), 1024) }]
+              : []),
+            {
+              name: "涵蓋期間",
+              value: `${digest.periodStart.toLocaleString("zh-TW")} ～ ${digest.periodEnd.toLocaleString("zh-TW")}`,
+              inline: true,
+            },
+            ...(siteUrl ? [{ name: "管理頁面", value: `[前往 /inbound](${siteUrl}/inbound)` }] : []),
+          ],
+          footer: { text: "摘要通知每日 07:00 與 19:00（台北時間）發送" },
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
+}
+
 export interface EmailSummaryPayload {
   summaryText: string;
   emailCount: number;

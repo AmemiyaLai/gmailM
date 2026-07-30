@@ -2,6 +2,7 @@
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
+import { buildEmailSearchPatterns } from "../lib/emailSearch";
 import { getSupabase } from "../lib/supabase";
 import { endOfTaipeiDate, parseEmailFilterParams, startOfTaipeiDate } from "../lib/emailFilters";
 
@@ -27,7 +28,9 @@ let query = supabase
   .limit(50);
 
 if (filters.q) {
-  query = query.textSearch("search_vector", filters.q, { type: "plain", config: "simple" });
+  for (const pattern of buildEmailSearchPatterns(filters.q)) {
+    query = query.ilike("search_text", pattern);
+  }
 }
 if (filters.category) {
   query = query.eq("category", filters.category);

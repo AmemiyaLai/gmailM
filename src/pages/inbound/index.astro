@@ -1,0 +1,238 @@
+---
+import SidebarLayout from "../../layouts/SidebarLayout.astro";
+import InboundEmailCard from "../../components/InboundEmailCard.astro";
+import { getSupabase } from "../../lib/supabase";
+import { listAliases, listInboundEmails } from "../../lib/inboundEmailService";
+
+const PAGE_SIZE = 50;
+
+const url = Astro.url;
+const aliasFilter = url.searchParams.get("alias")?.trim() || null;
+const onlyUnread = url.searchParams.get("unread") === "1";
+const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
+
+const supabase = getSupabase();
+const [aliases, { emails, hasMore }] = await Promise.all([
+  listAliases(supabase),
+  listInboundEmails(supabase, {
+    alias: aliasFilter,
+    onlyUnread,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  }),
+]);
+
+const aliasMap = new Map(aliases.map((item) => [item.alias, item]));
+
+function buildHref(params: { alias?: string | null; unread?: boolean; page?: number }): string {
+  const usp = new URLSearchParams();
+  const alias = params.alias === undefined ? aliasFilter : params.alias;
+  const unread = params.unread === undefined ? onlyUnread : params.unread;
+  if (alias) usp.set("alias", alias);
+  if (unread) usp.set("unread", "1");
+  if (params.page && params.page > 1) usp.set("page", String(params.page));
+  const qs = usp.toString();
+  return qs ? `/inbound?${qs}` : "/inbound";
+}
+---
+
+<SidebarLayout title="站點收件匣" activeView="inbound">
+  <div style="margin-bottom: var(--space-6);">
+    <h2 style="font-size: var(--font-size-xl); margin-bottom: var(--space-2);">站點收件匣</h2>
+    <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+      經 Cloudflare Email Routing 收進自架網域的信件。不同子站使用不同收件別名（如
+      <code>blog@</code>、<code>contact@</code>），首次收到的別名會自動登記為「未分類」，可在下方「別名管理」補上標籤與所屬站點。
+    </p>
+  </div>
+
+  <div class="alias-chips">
+    <a href={buildHref({ alias: null, page: 1 })} class:list={["alias-chip", { active: !aliasFilter }]}>
+      全部
+    </a>
+    {aliases.map((item) => (
+      <a
+        href={buildHref({ alias: item.alias, page: 1 })}
+        class:list={["alias-chip", { active: aliasFilter === item.alias, inactive: !item.is_active }]}
+        title={`${item.alias}@${item.site ? ` — ${item.site}` : ""}`}
+      >
+        {item.color && <span class="alias-dot" style={`background:${item.color};`}></span>}
+        <span>{item.label}</span>
+        <span class="alias-count">{item.message_count}</span>
+      </a>
+    ))}
+    <a href={buildHref({ unread: !onlyUnread, page: 1 })} class:list={["alias-chip", "unread-toggle", { active: onlyUnread }]}>
+      只看未讀
+    </a>
+  </div>
+
+  <div class="card" style="overflow: hidden; padding: 0;">
+    {emails.length === 0 ? (
+      <p style="padding: var(--space-6); color: var(--color-text-tertiary);">沒有符合條件的郵件。</p>
+    ) : (
+      emails.map((email) => {
+        const aliasInfo = aliasMap.get(email.alias);
+        return (
+          <InboundEmailCard
+            id={email.id}
+            alias={email.alias}
+            aliasLabel={aliasInfo?.label ?? email.alias}
+            aliasColor={aliasInfo?.color ?? null}
+            fromAddress={email.from_address}
+            fromDisplay={email.from_display}
+            subject={email.subject}
+            snippet={email.snippet}
+            hasAttachments={email.has_attachments}
+            isRead={email.is_read}
+            receivedAt={email.received_at}
+          />
+        );
+      })
+    )}
+  </div>
+
+  {(page > 1 || hasMore) && (
+    <div style="display:flex; justify-content:center; gap:var(--space-3); margin-top:var(--space-6);">
+      {page > 1 && (
+        <a href={buildHref({ page: page - 1 })} class="btn btn-outline">上一頁</a>
+      )}
+      {hasMore && (
+        <a href={buildHref({ page: page + 1 })} class="btn btn-outline">下一頁</a>
+      )}
+    </div>
+  )}
+
+  <details class="card alias-manager" id="alias-manager">
+    <summary>別名管理（{aliases.length}）</summary>
+    {aliases.length === 0 ? (
+      <p style="padding: var(--space-4) 0 0; color: var(--color-text-tertiary); font-size: var(--font-size-sm);">
+        尚無別名。收到第一封寄往本網域的信件後會自動登記。
+      </p>
+    ) : (
+      <div class="alias-rows">
+        {aliases.map((item) => (
+          <div class="alias-row" data-alias={item.alias}>
+            <code class="alias-address">{item.alias}@</code>
+            <input type="text" name="label" value={item.label} maxlength="64" placeholder="顯示標籤" aria-label={`${item.alias} 的標籤`} />
+            <input type="text" name="site" value={item.site ?? ""} maxlength="128" placeholder="所屬站點（選填）" aria-label={`${item.alias} 的所屬站點`} />
+            <button type="button" class="btn btn-outline alias-save-btn" data-action="save-alias">儲存</button>
+          </div>
+        ))}
+      </div>
+    )}
+  </details>
+</SidebarLayout>
+
+<style>
+  .alias-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+
+  .alias-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-full, 999px);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    background: var(--color-surface);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .alias-chip:hover {
+    background: var(--color-bg-tertiary);
+  }
+
+  .alias-chip.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+  }
+
+  .alias-chip.inactive {
+    opacity: 0.5;
+  }
+
+  .alias-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .alias-count {
+    font-size: var(--font-size-xs);
+    opacity: 0.75;
+  }
+
+  .unread-toggle {
+    margin-left: auto;
+  }
+
+  .alias-manager {
+    margin-top: var(--space-8);
+    padding: var(--space-4) var(--space-6);
+  }
+
+  .alias-manager summary {
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .alias-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+  }
+
+  .alias-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .alias-address {
+    flex-shrink: 0;
+    min-width: 120px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+  }
+
+  .alias-row input {
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+  }
+
+  .alias-save-btn {
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-xs);
+  }
+</style>
+
+<script>
+  import { initInboundAliasEditor } from "../../lib/inboundListClient";
+
+  const init = () => {
+    if (window.location.pathname !== "/inbound") return;
+    const manager = document.getElementById("alias-manager");
+    if (manager) initInboundAliasEditor(manager);
+  };
+
+  document.addEventListener("astro:page-load", init);
+  init();
+</script>

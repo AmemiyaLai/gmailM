@@ -375,11 +375,18 @@ pre code {
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  transition: width var(--transition-base);
 }
 
 .app-main {
   flex: 1;
   min-width: 0;
+}
+
+@media (min-width: 769px) {
+  html[data-sidebar-collapsed="true"] .app-sidebar {
+    width: 64px;
+  }
 }
 
 /* 批次操作工具列 */
@@ -548,4 +555,3 @@ pre code {
     background-color: var(--color-surface);
   }
 }
-

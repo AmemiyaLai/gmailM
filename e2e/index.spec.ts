@@ -44,6 +44,42 @@ test.describe("無障礙基礎檢查", () => {
   });
 });
 
+test.describe("側邊欄", () => {
+  test("可折疊並記住使用者設定", async ({ page }) => {
+    await page.goto("/");
+
+    const sidebar = page.locator(".app-sidebar");
+    const toggle = page.getByRole("button", { name: "折疊側邊欄" });
+    await expect(sidebar).toHaveCSS("width", "240px");
+
+    await toggle.click();
+    await expect(sidebar).toHaveCSS("width", "64px");
+    await expect(page.getByRole("button", { name: "展開側邊欄" })).toHaveAttribute("aria-expanded", "false");
+
+    await page.reload();
+    await expect(sidebar).toHaveCSS("width", "64px");
+
+    await page.getByRole("button", { name: "展開側邊欄" }).click();
+    await expect(sidebar).toHaveCSS("width", "240px");
+  });
+});
+
+test.describe("頂層導航列", () => {
+  test("捲動時保持在最上層且不被內容遮蓋", async ({ page }) => {
+    await page.goto("/");
+
+    const header = page.locator(".site-header");
+    await expect(header).toHaveCSS("position", "sticky");
+    await expect(header).toHaveCSS("z-index", "2000");
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(header).toBeInViewport();
+
+    const headerBox = await header.boundingBox();
+    expect(headerBox?.y).toBe(0);
+  });
+});
+
 test.describe("郵件分析頁", () => {
   test("應提供分析頁與時間範圍控制", async ({ page }) => {
     const errors: string[] = [];

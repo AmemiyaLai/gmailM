@@ -376,7 +376,9 @@ describe("POST /api/webhook/gmail", () => {
     // 雖然中間處理其他信件時有呼叫 .update() 去更新 emails 欄位，但 gmail_sync_state 的 update 應未被執行。
     // 我們可以藉由檢查 supabase.from 傳入的 table 來驗證，但由於 mock 是共用的，
     // 我們可以直接斷言最後沒有完成的更新，或者追蹤 from('gmail_sync_state') 的呼叫次數。
-    const syncStateUpdateCalls = fromMock.mock.calls.filter((c) => c[0] === "gmail_sync_state");
+    const syncStateUpdateCalls = fromMock.mock.calls.filter(
+      (c) => (c as unknown as [string, ...unknown[]])[0] === "gmail_sync_state",
+    );
     // 第一次是 select 一次，之後失敗不應有第二次（也就是不進行 update）
     expect(syncStateUpdateCalls.length).toBe(1);
     consoleSpy.mockRestore();
@@ -483,4 +485,3 @@ describe("POST /api/webhook/gmail", () => {
     });
   });
 });
-

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
-import { sendDiscordNotification, sendDiscordSummary, sendFirstSenderDiscordNotification, buildCleanupReviewEmbed, buildCleanupResultEmbed, sendCleanupReview } from "../lib/discord";
+import { sendDiscordNotification, sendDiscordSummary, sendFirstSenderDigestNotification, buildCleanupReviewEmbed, buildCleanupResultEmbed, sendCleanupReview } from "../lib/discord";
 
 describe("sendDiscordNotification()", () => {
   beforeEach(() => {
@@ -449,7 +449,13 @@ describe("sendCleanupReview()", () => {
   });
 });
 
-describe("sendFirstSenderDiscordNotification()", () => {
+describe("sendFirstSenderDigestNotification()", () => {
+  const entry = (i: number) => ({
+    senderAddress: `sender${i}@example.com`,
+    senderDisplay: `Sender ${i} <sender${i}@example.com>`,
+    firstReceivedAt: "2026-07-26T08:00:00.000Z",
+  });
+
   beforeEach(() => {
     vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/123/abc");
     vi.stubEnv("SITE_URL", "https://gmail-monitor.vercel.app");
@@ -459,37 +465,58 @@ describe("sendFirstSenderDiscordNotification()", () => {
 
   afterEach(() => vi.unstubAllEnvs());
 
-  it("應發送含安全提示與正規化地址的首次寄件者通知", async () => {
-    await sendFirstSenderDiscordNotification({
-      threadId: "thread-1", sender: "Alice <alice@example.com>", senderAddress: "alice@example.com",
-      subject: "帳號通知", snippet: "請確認", receivedAt: new Date("2026-07-26T08:00:00Z"),
-      category: "system", labels: ["IMPORTANT"],
-    });
+  it("應發送含人數、寄件者清單與管理頁面連結的摘要", async () => {
+    await sendFirstSenderDigestNotification([entry(1), entry(2)]);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.embeds[0].title).toBe("🛡️ 首次寄件者安全提醒");
-    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "正規化地址").value).toBe("alice@example.com");
-    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "安全建議").value).toContain("勿直接開啟");
+    expect(body.embeds[0].title).toBe("🛡️ 首次寄件者摘要");
+    expect(body.embeds[0].description).toContain("**2** 位首次寄件者");
+    expect(body.embeds[0].description).toContain("sender1@example.com");
+    expect(body.embeds[0].description).toContain("sender2@example.com");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "管理頁面").value)
+      .toContain("https://gmail-monitor.vercel.app/first-senders");
   });
 
-  it("無 sender, snippet 且 SITE_URL 為空時應採用預設降級與不含管理頁面欄位", async () => {
-    vi.stubEnv("SITE_URL", "");
-    await sendFirstSenderDiscordNotification({
-      threadId: "thread-2", sender: "", senderAddress: "empty@example.com",
-      subject: "", snippet: "", receivedAt: new Date(),
-      category: null, labels: [],
-    });
+  it("不得包含信件主旨或摘要內容（只列寄件者資訊）", async () => {
+    await sendFirstSenderDigestNotification([entry(1)]);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "寄件者").value).toBe("(未知)");
-    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "摘要").value).toBe("(無內容)");
+    const fieldNames = body.embeds[0].fields.map((f: { name: string }) => f.name);
+    expect(fieldNames).not.toContain("摘要");
+    expect(fieldNames).not.toContain("緊急狀況");
+    expect(body.embeds[0].url).toBeUndefined();
+  });
+
+  it("超過 15 位時應截斷清單並顯示剩餘人數", async () => {
+    const entries = Array.from({ length: 18 }, (_, i) => entry(i));
+    await sendFirstSenderDigestNotification(entries);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].description).toContain("**18** 位首次寄件者");
+    expect(body.embeds[0].description).toContain("還有 3 位");
+    expect(body.embeds[0].description).not.toContain("sender17@example.com");
+  });
+
+  it("空清單不應發送任何訊息", async () => {
+    await sendFirstSenderDigestNotification([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("senderDisplay 為空時應以地址顯示；SITE_URL 為空時不含管理頁面欄位", async () => {
+    vi.stubEnv("SITE_URL", "");
+    await sendFirstSenderDigestNotification([
+      { senderAddress: "empty@example.com", senderDisplay: "", firstReceivedAt: "2026-07-26T08:00:00.000Z" },
+    ]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].description).toContain("empty@example.com");
     expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "管理頁面")).toBeUndefined();
   });
 
   it("Discord 回傳錯誤時應拋出例外", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
-    await expect(sendFirstSenderDiscordNotification({
-      threadId: "t", sender: "a@example.com", senderAddress: "a@example.com", subject: "", snippet: "",
-      receivedAt: new Date(), category: "system", labels: [],
-    })).rejects.toThrow("Discord webhook failed (500)");
+    await expect(sendFirstSenderDigestNotification([entry(1)])).rejects.toThrow("Discord webhook failed (500)");
+  });
+
+  it("未設定 DISCORD_WEBHOOK_URL 時應拋出例外", async () => {
+    vi.stubEnv("DISCORD_WEBHOOK_URL", "");
+    await expect(sendFirstSenderDigestNotification([entry(1)])).rejects.toThrow("DISCORD_WEBHOOK_URL");
   });
 });
 

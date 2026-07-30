@@ -111,3 +111,20 @@ test.describe("郵件分析頁", () => {
     expect(errors).toEqual([]);
   });
 });
+
+test.describe("首次寄件者安全紀錄頁", () => {
+  test("應顯示安全狀態欄位", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/first-senders");
+    await expect(page).toHaveTitle(/首次寄件者安全紀錄/);
+    await expect(page.getByRole("heading", { name: "首次寄件者安全紀錄" })).toBeVisible();
+
+    const rows = page.locator(".first-sender-table tbody tr");
+    if (await rows.count() > 0) {
+      await expect(page.getByRole("columnheader", { name: "安全狀態" })).toBeVisible();
+      await expect(page.locator(".trust-badge").first()).toBeVisible();
+    }
+    expect(errors).toEqual([]);
+  });
+});

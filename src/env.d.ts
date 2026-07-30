@@ -27,6 +27,10 @@ interface ImportMetaEnv {
   readonly GEMINI_MODEL?: string;
   /** Google Safe Browsing Lookup API v4 金鑰；未設定時略過外部信譽查詢 */
   readonly SAFE_BROWSING_API_KEY?: string;
+  /** Cloudflare Email Worker 呼叫 inbound webhook 的 Bearer secret */
+  readonly INBOUND_EMAIL_WEBHOOK_SECRET: string;
+  /** 自架收件網域，用於從 to[] 抽取別名；未設定時預設 autodesignlab.org */
+  readonly INBOUND_EMAIL_DOMAIN?: string;
   readonly SITE_URL?: string;
 }
 

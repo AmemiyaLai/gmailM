@@ -7,8 +7,9 @@ import { classifyEmail } from "../../../lib/classify";
 import { sendDiscordNotification } from "../../../lib/discord";
 import { judgeEmailImportance } from "../../../lib/gemini";
 import { normalizeSenderAddress } from "../../../lib/senderAddress";
-import { deliverFirstSenderNotification, registerFirstSender } from "../../../lib/firstSender";
+import { registerFirstSender } from "../../../lib/firstSender";
 import { refreshSenderTags } from "../../../lib/senderTagService";
+import { evaluateAndStoreTrust } from "../../../lib/senderTrustService";
 import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub";
 
 interface SyncStateRow {
@@ -129,11 +130,10 @@ export const POST: APIRoute = async ({ request }) => {
           .eq("id", messageId)
           .maybeSingle() as { data: { id: string; is_important?: boolean; category?: string | null } | null };
 
-        if (existing) {
-          // 如果已經有基礎信件但還沒有進行 Gemini 豐富化，可以在此補齊，否則跳過
-          if (existing.category !== undefined) {
-            continue;
-          }
+        // 已豐富化（enrich 一定會寫入非 null 的 category）就整封跳過；
+        // 只寫入基礎資料但豐富化失敗的信，落到下方補齊 Gemini 判斷。
+        if (existing && existing.category !== null) {
+          continue;
         }
 
         const gmailMsg = await getMessage(messageId);
@@ -155,6 +155,8 @@ export const POST: APIRoute = async ({ request }) => {
               labels: gmailMsg.labels,
               received_at: gmailMsg.receivedAt.toISOString(),
               is_read: gmailMsg.isRead,
+              authentication_results: gmailMsg.authenticationResults || null,
+              received_spf: gmailMsg.receivedSpf || null,
             } as never,
             { onConflict: "id" },
           );
@@ -212,11 +214,17 @@ export const POST: APIRoute = async ({ request }) => {
               .update({ is_first_sender: true } as never)
               .eq("id", gmailMsg.id);
             if (firstFlagError) throw firstFlagError;
-            await deliverFirstSenderNotification(supabase, firstEvent, {
-              ...gmailMsg,
+
+            // 安全狀態評估失敗不得影響 history cursor 前推。
+            await evaluateAndStoreTrust(supabase, {
               senderAddress,
-              category,
-            });
+              emailId: gmailMsg.id,
+              authenticationResults: gmailMsg.authenticationResults || null,
+              receivedSpf: gmailMsg.receivedSpf || null,
+            }).catch((error) => console.error(`評估 ${senderAddress} 的安全狀態失敗:`, error));
+
+            // 不再即時發送 Discord 通知；事件維持 pending，
+            // 由每日 07:00 / 19:00 的 first-sender-digest 排程彙整成摘要發送。
           }
         }
 

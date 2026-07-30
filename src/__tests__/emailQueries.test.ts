@@ -402,6 +402,25 @@ describe("emailQueries", () => {
       await getFirstSenderEvents(10);
       expect(mockQuery.limit).toHaveBeenCalledWith(10);
     });
+
+    it("select 應包含安全狀態欄位", async () => {
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: [], error: null });
+
+      await getFirstSenderEvents();
+      const columns = mockQuery.select.mock.calls.at(-1)?.[0] as string;
+      for (const column of [
+        "trust_level",
+        "spf_result",
+        "dkim_result",
+        "dmarc_result",
+        "auth_domain",
+        "trust_evidence",
+        "trust_evaluated_at",
+      ]) {
+        expect(columns).toContain(column);
+      }
+    });
   });
 
   describe("getSenderGroupUnreadCounts()", () => {

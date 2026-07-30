@@ -19,7 +19,7 @@ const {
   mockListHistory, mockGetMessage, mockClassifyEmail,
   mockSendDiscordNotification, mockJudgeEmailImportance,
   mockNormalizeSenderAddress, mockRegisterFirstSender,
-  mockDeliverFirstSenderNotification, mockRefreshSenderTags, mockGetSupabase,
+  mockRefreshSenderTags, mockGetSupabase,
 } = vi.hoisted(() => ({
   mockListHistory: vi.fn(),
   mockGetMessage: vi.fn(),
@@ -28,9 +28,16 @@ const {
   mockJudgeEmailImportance: vi.fn().mockResolvedValue({ important: true, reason: "test" }),
   mockNormalizeSenderAddress: vi.fn().mockReturnValue("test@example.com"),
   mockRegisterFirstSender: vi.fn().mockResolvedValue(null),
-  mockDeliverFirstSenderNotification: vi.fn().mockResolvedValue(true),
   mockRefreshSenderTags: vi.fn().mockResolvedValue(undefined),
   mockGetSupabase: vi.fn(),
+}));
+
+const { mockEvaluateAndStoreTrust } = vi.hoisted(() => ({
+  mockEvaluateAndStoreTrust: vi.fn().mockResolvedValue({ level: "unverified" }),
+}));
+
+vi.mock("../../../lib/senderTrustService", () => ({
+  evaluateAndStoreTrust: mockEvaluateAndStoreTrust,
 }));
 
 vi.mock("../../../lib/gmail", () => ({
@@ -56,7 +63,6 @@ vi.mock("../../../lib/senderAddress", () => ({
 
 vi.mock("../../../lib/firstSender", () => ({
   registerFirstSender: mockRegisterFirstSender,
-  deliverFirstSenderNotification: mockDeliverFirstSenderNotification,
 }));
 
 vi.mock("../../../lib/senderTagService", () => ({
@@ -166,6 +172,108 @@ describe("POST /api/webhook/gmail", () => {
         azp: "123",
       }),
     });
+    mockEvaluateAndStoreTrust.mockResolvedValue({ level: "unverified" });
+  });
+
+  it("upsert payload 應包含驗證標頭欄位", async () => {
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-1" }] });
+    mockGetMessage.mockResolvedValue({
+      id: "msg-1",
+      threadId: "t-1",
+      sender: "Test <test@example.com>",
+      recipient: "me@gmail.com",
+      subject: "Test",
+      snippet: "s",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: ["INBOX"],
+      receivedAt: new Date("2026-01-01T10:00:00Z"),
+      isRead: false,
+      authenticationResults: "mx.google.com; dmarc=pass",
+      receivedSpf: "",
+    });
+
+    await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+    expect(chain.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authentication_results: "mx.google.com; dmarc=pass",
+        received_spf: null,
+      }),
+      { onConflict: "id" },
+    );
+  });
+
+  it("首次寄件者應以郵件本身的驗證標頭評估安全狀態", async () => {
+    setupSupabase({ lastHistoryId: 50 });
+    mockRegisterFirstSender.mockResolvedValue({
+      sender_address: "test@example.com",
+      notification_attempts: 0,
+    });
+    mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-1" }] });
+    mockGetMessage.mockResolvedValue({
+      id: "msg-1",
+      threadId: "t-1",
+      sender: "Test <test@example.com>",
+      recipient: "me@gmail.com",
+      subject: "Test",
+      snippet: "s",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: ["INBOX"],
+      receivedAt: new Date("2026-01-01T10:00:00Z"),
+      isRead: false,
+      authenticationResults: "mx.google.com; dmarc=pass",
+      receivedSpf: "pass",
+    });
+
+    const res = await POST(
+      makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockEvaluateAndStoreTrust).toHaveBeenCalledWith(expect.anything(), {
+      senderAddress: "test@example.com",
+      emailId: "msg-1",
+      authenticationResults: "mx.google.com; dmarc=pass",
+      receivedSpf: "pass",
+    });
+  });
+
+  it("安全狀態評估失敗不應影響回應與後續處理", async () => {
+    setupSupabase({ lastHistoryId: 50 });
+    mockEvaluateAndStoreTrust.mockRejectedValue(new Error("boom"));
+    mockRegisterFirstSender.mockResolvedValue({
+      sender_address: "test@example.com",
+      notification_attempts: 0,
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockListHistory.mockResolvedValue({ messages: [{ messageId: "msg-1" }] });
+    mockGetMessage.mockResolvedValue({
+      id: "msg-1",
+      threadId: "t-1",
+      sender: "Test <test@example.com>",
+      recipient: "me@gmail.com",
+      subject: "Test",
+      snippet: "s",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: ["INBOX"],
+      receivedAt: new Date("2026-01-01T10:00:00Z"),
+      isRead: false,
+      authenticationResults: "",
+      receivedSpf: "",
+    });
+
+    const res = await POST(
+      makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }),
+    );
+
+    expect(res.status).toBe(200);
+    // 評估失敗只記錄錯誤，不得中斷處理或阻止 history cursor 前推
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it("無 Authorization header 應回傳 401", async () => {
@@ -311,7 +419,8 @@ describe("POST /api/webhook/gmail", () => {
 
     await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
     expect(mockRegisterFirstSender).toHaveBeenCalled();
-    expect(mockDeliverFirstSenderNotification).toHaveBeenCalled();
+    // 事件維持 pending，改由 first-sender-digest 排程彙整發送，webhook 不再即時通知
+    expect(mockEvaluateAndStoreTrust).toHaveBeenCalled();
   });
 
   it("處理完成後應呼叫 refreshSenderTags", async () => {

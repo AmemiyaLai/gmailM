@@ -219,14 +219,17 @@ async function claimPending(reviewId: string, nextStatus: CleanupReviewStatus): 
 }
 
 /**
- * 通過審核：依 action 執行對應動作。
+ * 對已搶佔的審核單實際執行動作。
  * - trash：郵件移到 Gmail 垃圾桶，並從 Supabase 移除該列（與 src/pages/api/emails/bulk.ts 的 trash 語意一致）。
  * - read：Gmail 標記已讀，並同步 Supabase is_read=true（與 bulk.ts 的 read 語意一致），郵件本身保留。
+ *
+ * 這一段刻意與 claimPending 分開，讓 resumeStuckReviews 能在中途中斷後重跑。
+ * 重跑是安全的：Gmail 的 trash / markAsRead 對已處理的郵件都是幂等的，
+ * Supabase 的 delete / update 也不會因為重複執行而出錯。
  */
-export async function approveReview(reviewId: string): Promise<DecisionResult> {
-  const review = await claimPending(reviewId, "approved");
-  if (!review) return { status: "already-handled" };
-
+async function executeReviewAction(
+  review: CleanupReviewRow,
+): Promise<{ processedCount: number; failedCount: number }> {
   const ids = review.email_ids ?? [];
   const gmailFn = review.action === "trash" ? trashMessage : markAsRead;
   const results = await Promise.allSettled(ids.map((id) => gmailFn(id)));
@@ -237,7 +240,7 @@ export async function approveReview(reviewId: string): Promise<DecisionResult> {
     if (result.status === "fulfilled") {
       succeeded.push(ids[i]);
     } else {
-      console.error(`Cleanup review ${reviewId} (${review.action}): 失敗 ${ids[i]}:`, result.reason);
+      console.error(`Cleanup review ${review.id} (${review.action}): 失敗 ${ids[i]}:`, result.reason);
       errors.push(`${ids[i]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
     }
   });
@@ -251,20 +254,63 @@ export async function approveReview(reviewId: string): Promise<DecisionResult> {
     if (error) errors.push(`Supabase 更新失敗：${error.message}`);
   }
 
+  // processed_count 由 null 變成數字，同時也是「這則審核已完成處理」的標記，
+  // resumeStuckReviews 靠它判斷有沒有做完。
   await supabase
     .from("cleanup_reviews" as never)
     .update({
       processed_count: succeeded.length,
       last_error: errors.length > 0 ? errors.join("\n").slice(0, 2000) : null,
     } as never)
-    .eq("id", reviewId);
+    .eq("id", review.id);
 
-  return {
-    status: "approved",
-    action: review.action,
-    processedCount: succeeded.length,
-    failedCount: ids.length - succeeded.length,
-  };
+  return { processedCount: succeeded.length, failedCount: ids.length - succeeded.length };
+}
+
+/** 通過審核：搶佔 pending 後執行對應動作 */
+export async function approveReview(reviewId: string): Promise<DecisionResult> {
+  const review = await claimPending(reviewId, "approved");
+  if (!review) return { status: "already-handled" };
+
+  const { processedCount, failedCount } = await executeReviewAction(review);
+  return { status: "approved", action: review.action, processedCount, failedCount };
+}
+
+/** 視為「處理中斷」的判定門檻：已按下確認但超過這個時間仍未寫入 processed_count */
+export const STUCK_REVIEW_THRESHOLD_MS = 5 * 60 * 1000;
+
+/**
+ * 安全網：補做那些「已按下確認、但處理過程被中斷」的審核單。
+ *
+ * 按鈕的實際處理跑在 waitUntil 的背景工作裡，理論上會完成，但若執行實例
+ * 在中途被回收（部署、逾時、當機），審核單會停在 status=approved 而 processed_count 為 null。
+ * 這支由 cron 呼叫，把這些補做完，避免郵件卡在「已核准但沒動作」的狀態。
+ */
+export async function resumeStuckReviews(): Promise<{ resumed: number; processed: number }> {
+  const supabase = getSupabase();
+  const cutoff = new Date(Date.now() - STUCK_REVIEW_THRESHOLD_MS).toISOString();
+
+  const { data } = await supabase
+    .from("cleanup_reviews" as never)
+    .select(REVIEW_COLUMNS)
+    .eq("status", "approved")
+    .is("processed_count", null)
+    .lt("decided_at", cutoff);
+
+  const stuck = (data ?? []) as CleanupReviewRow[];
+  let processed = 0;
+
+  for (const review of stuck) {
+    try {
+      const result = await executeReviewAction(review);
+      processed += result.processedCount;
+      console.warn(`Cleanup review ${review.id}: 補做完成（${result.processedCount} 封）`);
+    } catch (err) {
+      console.error(`Cleanup review ${review.id}: 補做失敗:`, err);
+    }
+  }
+
+  return { resumed: stuck.length, processed };
 }
 
 /** 取消審核：不動 Gmail，郵件保留 */

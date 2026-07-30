@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildCleanupResultEmbed,
   buildCleanupReviewEmbed,
+  editInteractionMessage,
   sendCleanupReview,
 } from "../lib/discord";
 
@@ -156,6 +157,51 @@ describe("sendCleanupReview()", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
 
     await expect(sendCleanupReview({ reviewId: "r1", action: "trash", emails })).resolves.toBeNull();
+  });
+});
+
+describe("editInteractionMessage()", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const embed = { title: "t", description: "d" };
+
+  it("應 PATCH 原始互動訊息並清空按鈕", async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+
+    await editInteractionMessage("app-1", "token-1", embed);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://discord.com/api/v10/webhooks/app-1/token-1/messages/@original");
+    expect(init.method).toBe("PATCH");
+    // interaction token 本身即憑證，不該帶 Bot token
+    expect(init.headers.Authorization).toBeUndefined();
+
+    const body = JSON.parse(init.body as string);
+    expect(body.embeds).toEqual([embed]);
+    expect(body.components).toEqual([]);
+  });
+
+  it("Discord 回非 2xx 時應丟出含狀態碼的錯誤", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 404, text: async () => "Unknown Webhook" });
+
+    await expect(editInteractionMessage("app-1", "token-1", embed)).rejects.toThrow(
+      /404.*Unknown Webhook/,
+    );
+  });
+
+  it("錯誤回應讀取失敗時仍應丟出含狀態碼的錯誤", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => { throw new Error("boom"); } });
+
+    await expect(editInteractionMessage("app-1", "token-1", embed)).rejects.toThrow(/500/);
   });
 });
 

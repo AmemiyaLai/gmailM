@@ -1,28 +1,30 @@
-name: First Sender Retry
+name: First Sender Digest
 
 on:
   schedule:
-    - cron: "15 * * * *"
+    # 台北時間（UTC+8）每日 07:00 與 19:00 各發送一次摘要
+    - cron: "0 23 * * *"
+    - cron: "0 11 * * *"
   workflow_dispatch:
 
 jobs:
-  trigger-first-sender-retry:
+  trigger-first-sender-digest:
     runs-on: ubuntu-latest
     steps:
-      - name: Call first-sender-retry API
+      - name: Call first-sender-digest API
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
           code=$(curl -sS --max-time 120 -o response.txt -w '%{http_code}' \
             -H "Authorization: Bearer ${CRON_SECRET}" \
-            "https://gmailm.autodesignlab.org/api/gmail/first-sender-retry")
+            "https://gmailm.autodesignlab.org/api/gmail/first-sender-digest")
           echo "HTTP_STATUS: ${code}"
           echo "--- response body ---"
           cat response.txt || true
           echo
           # 明確拒絕 3xx：Cloudflare Access 的登入導向會回 302，而 curl -f 只對 >=400 失敗
           if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
-            echo "::error::first-sender-retry 回傳非 2xx（${code}）"
+            echo "::error::first-sender-digest 回傳非 2xx（${code}）"
             exit 1
           fi

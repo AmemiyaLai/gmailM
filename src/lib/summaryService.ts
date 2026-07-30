@@ -23,10 +23,21 @@ export type GenerateSummaryResult =
 
 /** 區分失敗來源，讓 API route 能回傳合適的 HTTP status */
 export class SummaryError extends Error {
-  constructor(message: string, readonly code: "db" | "gemini") {
+  constructor(
+    message: string,
+    readonly code: "db" | "gemini",
+    /** 底層錯誤摘要（例如 Gemini 的 API_KEY_INVALID），供 API 回應附帶排查資訊 */
+    readonly detail?: string,
+  ) {
     super(message);
     this.name = "SummaryError";
   }
+}
+
+/** 取出底層錯誤最有辨識度的一行，避免把整包 JSON 塞進回應 */
+function describeError(err: unknown): string | undefined {
+  if (!(err instanceof Error) || !err.message) return undefined;
+  return err.message.slice(0, 300);
 }
 
 export interface GenerateUnreadSummaryOptions {
@@ -91,7 +102,7 @@ export async function generateUnreadSummary(
     );
   } catch (err) {
     console.error("Summary: Gemini summarization failed:", err);
-    throw new SummaryError("Gemini summarization failed", "gemini");
+    throw new SummaryError("Gemini summarization failed", "gemini", describeError(err));
   }
 
   const { error: insertError } = await supabase.from("email_summaries" as never).insert({

@@ -58,7 +58,7 @@ export const POST: APIRoute = async ({ request }) => {
     });
   } catch (err) {
     if (err instanceof SummaryError && err.code === "gemini") {
-      return json({ error: "AI 摘要產生失敗，請稍後再試。" }, 502);
+      return json({ error: "AI 摘要產生失敗，請稍後再試。", detail: err.detail }, 502);
     }
     console.error("Manual summary failed:", err);
     return json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);

@@ -125,6 +125,84 @@ export async function getCategoryCounts(): Promise<{ category: string; count: nu
   return results;
 }
 
+export type StatTrend = {
+  direction: "up" | "down" | "flat";
+  percentage: number | null;
+};
+
+export interface DashboardStatTrends {
+  unread: StatTrend | null;
+  today: StatTrend | null;
+  groups: Record<string, StatTrend | null>;
+  categories: Record<string, StatTrend | null>;
+}
+
+interface DashboardStatSnapshotRow {
+  recorded_at: string;
+  unread_count: number;
+  today_count: number;
+  group_counts: Record<string, number> | null;
+  category_counts: Record<string, number> | null;
+}
+
+const DASHBOARD_SNAPSHOT_INTERVAL_MS = 30 * 60 * 1000;
+
+function createStatTrend(current: number, previous: number): StatTrend {
+  const difference = current - previous;
+  return {
+    direction: difference > 0 ? "up" : difference < 0 ? "down" : "flat",
+    percentage: previous === 0 ? (current === 0 ? 0 : null) : Math.round((difference / previous) * 100),
+  };
+}
+
+/**
+ * 以儀表板上一筆快照計算漲跌，並每 30 分鐘保留一次目前數據。
+ * 首次使用尚未有可比較的紀錄時，趨勢會回傳 null。
+ */
+export async function getDashboardStatTrends(
+  unreadCount: number,
+  todayCount: number,
+  groupCounts: Record<string, number>,
+  categoryCounts: Record<string, number>,
+): Promise<DashboardStatTrends> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("dashboard_stat_snapshots" as never)
+    .select("recorded_at, unread_count, today_count, group_counts, category_counts")
+    .order("recorded_at", { ascending: false })
+    .limit(1);
+
+  const previous = ((data ?? [])[0] ?? null) as DashboardStatSnapshotRow | null;
+  const now = new Date();
+
+  if (!previous || now.getTime() - new Date(previous.recorded_at).getTime() >= DASHBOARD_SNAPSHOT_INTERVAL_MS) {
+    await supabase.from("dashboard_stat_snapshots" as never).insert({
+      recorded_at: now.toISOString(),
+      unread_count: unreadCount,
+      today_count: todayCount,
+      group_counts: groupCounts,
+      category_counts: categoryCounts,
+    } as never);
+  }
+
+  return {
+    unread: previous ? createStatTrend(unreadCount, previous.unread_count) : null,
+    today: previous ? createStatTrend(todayCount, previous.today_count) : null,
+    groups: Object.fromEntries(
+      Object.entries(groupCounts).map(([group, count]) => [
+        group,
+        previous ? createStatTrend(count, previous.group_counts?.[group] ?? 0) : null,
+      ]),
+    ),
+    categories: Object.fromEntries(
+      Object.entries(categoryCounts).map(([category, count]) => [
+        category,
+        previous ? createStatTrend(count, previous.category_counts?.[category] ?? 0) : null,
+      ]),
+    ),
+  };
+}
+
 export async function getImportantEmails(limit = 5): Promise<EmailPreview[]> {
   const supabase = getSupabase();
   const { data } = await supabase

@@ -19,18 +19,29 @@
       </div>
     </a>
 
-    <!-- 右側導航與連線狀態 -->
+    <!-- 搜尋與右側導航 -->
     <nav class="header-nav">
       <div class="header-search-wrap">
         <form id="header-search-form" class="header-search" action="/search" method="get">
-          <input type="text" name="q" id="header-search-input" placeholder="搜尋寄件者 / 主旨 / 內文摘要" autocomplete="off" />
+          <span class="material-symbols-rounded header-search-icon" aria-hidden="true">search</span>
+          <input type="text" name="q" id="header-search-input" placeholder="搜尋寄件者 / 主旨 / 內文摘要" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="header-search-suggestions" aria-expanded="false" />
         </form>
-        <button id="search-toggle" type="button" class="btn btn-outline nav-btn search-toggle-btn" title="搜尋郵件" aria-label="搜尋郵件" aria-expanded="false">
-          <span class="material-symbols-rounded search-icon" aria-hidden="true">search</span>
-        </button>
+        <div id="header-search-suggestions" class="header-search-suggestions" role="listbox" aria-label="郵件搜尋建議" hidden></div>
       </div>
-      <span id="connection-status" class="badge connection-badge">
-        連線中...
+      <span
+        id="connection-status"
+        class="connection-badge"
+        data-state="connecting"
+        role="status"
+        aria-live="polite"
+        aria-label="即時服務連線中"
+        data-tooltip="即時服務連線中"
+        tabindex="0"
+      >
+        <span class="material-symbols-rounded connection-icon" data-connection-icon aria-hidden="true">
+          wifi_off
+        </span>
+        <span class="sr-only" data-connection-label>即時服務連線中</span>
       </span>
       <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即從 Gmail 同步最新郵件" aria-label="立即同步">
         <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
@@ -79,30 +90,124 @@
     syncThemeIcons();
   });
 
-  const searchWrap = document.querySelector<HTMLElement>(".header-search-wrap");
-  const searchToggle = document.querySelector<HTMLButtonElement>("#search-toggle");
+  const searchForm = document.querySelector<HTMLFormElement>("#header-search-form");
   const searchInput = document.querySelector<HTMLInputElement>("#header-search-input");
+  const suggestions = document.querySelector<HTMLElement>("#header-search-suggestions");
+  const SEARCH_CACHE_TTL = 5 * 60 * 1000;
+  const SEARCH_CACHE_PREFIX = "gmail-monitor:search-suggestions:";
+  type SuggestedEmail = { id: string; sender: string; subject: string; snippet: string };
+  type CachedSuggestions = { expiresAt: number; emails: SuggestedEmail[] };
+  const searchCache = new Map<string, CachedSuggestions>();
+  let searchRequestId = 0;
+  let searchTimer: number | undefined;
+  let activeSearchController: AbortController | undefined;
 
-  function closeSearch() {
-    searchWrap?.classList.remove("header-search-wrap--open");
-    searchToggle?.setAttribute("aria-expanded", "false");
+  function closeSuggestions() {
+    if (suggestions) suggestions.hidden = true;
+    searchInput?.setAttribute("aria-expanded", "false");
   }
 
-  searchToggle?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const isOpen = searchWrap?.classList.contains("header-search-wrap--open");
-    if (isOpen) {
-      closeSearch();
+  function renderSuggestions(emails: SuggestedEmail[], query: string) {
+    if (!suggestions) return;
+    if (emails.length === 0) {
+      suggestions.innerHTML = `<p class="header-search-empty">找不到符合「${escapeHtml(query)}」的郵件</p>`;
     } else {
-      searchWrap?.classList.add("header-search-wrap--open");
-      searchToggle.setAttribute("aria-expanded", "true");
-      searchInput?.focus();
+      suggestions.innerHTML = emails.map((email) => `
+        <a class="header-search-suggestion" role="option" href="/emails/${encodeURIComponent(email.id)}">
+          <span class="header-search-suggestion-sender">${escapeHtml(email.sender)}</span>
+          <span class="header-search-suggestion-subject">${escapeHtml(email.subject || "（無主旨）")}</span>
+          <span class="header-search-suggestion-snippet">${escapeHtml(email.snippet || "")}</span>
+        </a>
+      `).join("");
+    }
+    suggestions.hidden = false;
+    searchInput?.setAttribute("aria-expanded", "true");
+  }
+
+  function escapeHtml(value: string) {
+    const element = document.createElement("span");
+    element.textContent = value;
+    return element.innerHTML;
+  }
+
+  function getCachedSuggestions(query: string): SuggestedEmail[] | undefined {
+    const cached = searchCache.get(query);
+    if (cached && cached.expiresAt > Date.now()) return cached.emails;
+    searchCache.delete(query);
+
+    try {
+      const stored = sessionStorage.getItem(`${SEARCH_CACHE_PREFIX}${query}`);
+      if (!stored) return undefined;
+      const parsed = JSON.parse(stored) as CachedSuggestions;
+      if (parsed.expiresAt <= Date.now() || !Array.isArray(parsed.emails)) {
+        sessionStorage.removeItem(`${SEARCH_CACHE_PREFIX}${query}`);
+        return undefined;
+      }
+      searchCache.set(query, parsed);
+      return parsed.emails;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function cacheSuggestions(query: string, emails: SuggestedEmail[]) {
+    const cached = { emails, expiresAt: Date.now() + SEARCH_CACHE_TTL };
+    searchCache.set(query, cached);
+    try {
+      sessionStorage.setItem(`${SEARCH_CACHE_PREFIX}${query}`, JSON.stringify(cached));
+    } catch {
+      // 瀏覽器禁止儲存空間時，仍保留本頁面的記憶體快取。
+    }
+  }
+
+  searchInput?.addEventListener("input", () => {
+    const query = searchInput.value.trim();
+    window.clearTimeout(searchTimer);
+    activeSearchController?.abort();
+    const requestId = ++searchRequestId;
+    if (query.length < 2) {
+      closeSuggestions();
+      return;
+    }
+    const cached = getCachedSuggestions(query);
+    if (cached) {
+      renderSuggestions(cached, query);
+      return;
+    }
+    searchTimer = window.setTimeout(async () => {
+      const controller = new AbortController();
+      activeSearchController = controller;
+      try {
+        const response = await fetch(`/api/emails/suggestions?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (requestId !== searchRequestId || !response.ok) return;
+        const emails = result.emails ?? [];
+        cacheSuggestions(query, emails);
+        renderSuggestions(emails, query);
+      } catch {
+        if (requestId === searchRequestId) closeSuggestions();
+      } finally {
+        if (activeSearchController === controller) activeSearchController = undefined;
+      }
+    }, 350);
+  });
+  searchInput?.addEventListener("focus", () => {
+    if (searchInput.value.trim() && suggestions?.childElementCount) {
+      suggestions.hidden = false;
+      searchInput.setAttribute("aria-expanded", "true");
     }
   });
-  searchWrap?.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", closeSearch);
+  searchForm?.addEventListener("submit", closeSuggestions);
+  document.addEventListener("click", (event) => {
+    if (!suggestions?.contains(event.target as Node) && event.target !== searchInput) closeSuggestions();
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeSearch();
+    if (event.key === "Escape") {
+      closeSuggestions();
+      searchInput?.blur();
+    }
   });
   document.addEventListener("astro:after-swap", () => {
     const stored = localStorage.getItem("theme");
@@ -166,7 +271,11 @@
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "請求失敗");
+    if (!res.ok) {
+      // detail 只寫入 console，避免把底層 API 訊息塞進 toast
+      if (data.detail) console.error(`${url} 失敗：`, data.detail);
+      throw new Error(data.error || "請求失敗");
+    }
     return data;
   }
 
@@ -237,9 +346,7 @@
 
 <style>
   .site-header {
-    background: rgba(15, 23, 42, 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     position: sticky;
     top: 0;
@@ -250,8 +357,8 @@
 
   .header-content {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: var(--space-6);
   }
 
   .brand-link {
@@ -342,6 +449,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-4);
+    flex: 1;
+    min-width: 0;
   }
 
   .nav-btn {
@@ -359,41 +468,34 @@
   }
 
   .header-search-wrap {
-    display: flex;
-    align-items: center;
-  }
-
-  .search-toggle-btn {
-    padding: var(--space-2);
+    position: relative;
+    flex: 1;
+    min-width: 180px;
   }
 
   .header-search {
-    width: 0;
-    flex: 0 0 auto;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    margin-right: 0;
-    transition:
-      width var(--transition-base),
-      margin-right var(--transition-base),
-      opacity var(--transition-base),
-      border-color var(--transition-base);
+    display: flex;
+    align-items: center;
+    width: 100%;
     background: var(--color-surface);
-    border: 1px solid transparent;
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-full);
   }
 
-  .header-search-wrap--open .header-search {
-    width: 260px;
-    margin-right: var(--space-2);
-    opacity: 1;
-    pointer-events: auto;
-    border-color: var(--color-border);
+  .header-search:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+
+  .header-search-icon {
+    margin-left: var(--space-4);
+    color: var(--color-text-tertiary);
+    font-size: 18px;
   }
 
   .header-search input {
-    width: 100%;
+    min-width: 0;
+    flex: 1;
     padding: var(--space-2) var(--space-4);
     border: none;
     background: transparent;
@@ -403,6 +505,43 @@
 
   .header-search input:focus {
     outline: none;
+  }
+
+  .header-search-suggestions {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 0;
+    right: 0;
+    z-index: 10;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.28));
+  }
+
+  .header-search-suggestion {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.3fr) minmax(0, 0.7fr);
+    gap: 2px var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .header-search-suggestion + .header-search-suggestion { border-top: 1px solid var(--color-border-subtle); }
+  .header-search-suggestion:hover, .header-search-suggestion:focus { background: var(--color-surface-hover); text-decoration: none; }
+  .header-search-suggestion-sender { overflow: hidden; color: var(--color-text-secondary); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+  .header-search-suggestion-subject { overflow: hidden; font-weight: var(--font-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+  .header-search-suggestion-snippet { grid-column: 1 / -1; overflow: hidden; color: var(--color-text-tertiary); font-size: var(--font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
+  .header-search-empty { margin: 0; padding: var(--space-4); color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
+
+  @media (max-width: 760px) {
+    .brand-info { display: none; }
+    .header-content { gap: var(--space-3); }
+    .header-nav { gap: var(--space-2); }
+    .header-search-wrap { min-width: 0; }
+    .connection-badge, #generate-summary, #send-summary-discord { display: none; }
   }
 
   .theme-toggle-btn {
@@ -448,17 +587,74 @@
   }
 
   .connection-badge {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-bg-tertiary);
-    color: var(--color-text-tertiary);
-    /* 與同列 .nav-btn 使用相同字級、內距與邊框高度。 */
-    padding: var(--space-2) var(--space-4);
-    border: 1px solid transparent;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    padding: 0;
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--color-error);
+    border: 1px solid rgba(239, 68, 68, 0.35);
     border-radius: var(--radius-full);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .connection-badge::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    left: 50%;
+    z-index: 1;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-md);
+    color: var(--color-text);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
     white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -4px);
+    transition:
+      opacity var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .connection-badge:hover::after,
+  .connection-badge:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .connection-badge[data-state="connected"] {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--color-success);
+    border-color: rgba(34, 197, 94, 0.35);
+  }
+
+  .connection-icon {
+    font-size: 18px;
+  }
+
+  .connection-badge[data-state="connecting"] .connection-icon {
+    animation: connection-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes connection-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 </style>

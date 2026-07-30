@@ -4,9 +4,10 @@ export interface Props {
   value: string | number;
   href?: string;
   accent?: "primary" | "warning" | "info";
+  trend?: { direction: "up" | "down" | "flat"; percentage: number | null } | null;
 }
 
-const { label, value, href, accent = "primary" } = Astro.props;
+const { label, value, href, accent = "primary", trend = null } = Astro.props;
 
 const accentColor =
   accent === "warning" ? "var(--color-warning)" : accent === "info" ? "var(--color-info)" : "var(--color-primary)";
@@ -16,17 +17,25 @@ const Tag = href ? "a" : "div";
 
 <Tag href={href} class="card stat-card" style={`--accent:${accentColor}; ${href ? "text-decoration:none; color:inherit;" : ""}`}>
   <div class="stat-value">{value}</div>
-  <div class="stat-label">{label}</div>
+  <div class="stat-footer">
+    <div class="stat-label">{label}</div>
+    {trend && (
+      <span class:list={["stat-trend", trend.direction]} title="相較於上一筆統計紀錄">
+        {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"}
+        {trend.percentage === null ? " 新增" : ` ${trend.percentage > 0 ? "+" : ""}${trend.percentage}%`}
+      </span>
+    )}
+  </div>
 </Tag>
 
 <style>
   .stat-card {
-    padding: var(--space-4);
-    border-top: 3px solid var(--accent, var(--color-primary));
+    padding: var(--space-3);
+    border-top: 2px solid var(--accent, var(--color-primary));
   }
 
   .stat-value {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-bold);
     color: var(--color-text);
     line-height: var(--line-height-tight);
@@ -35,6 +44,23 @@ const Tag = href ? "a" : "div";
   .stat-label {
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
-    margin-top: var(--space-1);
+    margin-top: 2px;
   }
+
+  .stat-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .stat-trend {
+    font-size: 11px;
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+  }
+
+  .stat-trend.up { color: var(--color-success); }
+  .stat-trend.down { color: var(--color-error); }
+  .stat-trend.flat { color: var(--color-text-tertiary); }
 </style>

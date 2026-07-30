@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+
+// CI 沒有真實金鑰，但 getClient() 會檢查金鑰存在，因此統一注入測試值
+vi.stubEnv("GEMINI_API_KEY", "test-api-key");
+afterAll(() => vi.unstubAllEnvs());
 
 const generateContentMock = vi.fn();
 
@@ -233,3 +237,19 @@ describe("judgeEmailImportance() - fallback branches", () => {
   });
 });
 
+
+describe("getClient() - 缺少 GEMINI_API_KEY", () => {
+  it("未設定金鑰時應拋出明確錯誤，而非送出無效請求", async () => {
+    generateContentMock.mockReset();
+    vi.resetModules();
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const { summarizeUnreadEmails: fresh } = await import("../lib/gemini");
+
+    await expect(
+      fresh([{ sender: "a@b.com", subject: "s", snippet: "n", category: null, receivedAt: new Date() }]),
+    ).rejects.toThrow("GEMINI_API_KEY is not configured");
+    expect(generateContentMock).not.toHaveBeenCalled();
+
+    vi.stubEnv("GEMINI_API_KEY", "test-api-key");
+  });
+});

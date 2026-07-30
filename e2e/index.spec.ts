@@ -78,6 +78,19 @@ test.describe("頂層導航列", () => {
     const headerBox = await header.boundingBox();
     expect(headerBox?.y).toBe(0);
   });
+
+  test("連線 icon 懸停時顯示狀態訊息", async ({ page }) => {
+    await page.goto("/");
+
+    const connectionStatus = page.locator("#connection-status");
+    await expect(connectionStatus).toHaveAttribute("data-tooltip", /即時服務/);
+    await connectionStatus.hover();
+
+    await expect.poll(() =>
+      connectionStatus.evaluate((element) =>
+        getComputedStyle(element, "::after").opacity),
+    ).toBe("1");
+  });
 });
 
 test.describe("郵件分析頁", () => {

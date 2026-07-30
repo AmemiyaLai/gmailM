@@ -128,8 +128,9 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
     .recent-unread-toolbar {
       display: flex;
       align-items: center;
-      gap: var(--space-4);
-      margin-bottom: var(--space-6);
+      column-gap: var(--space-4);
+      row-gap: var(--space-2);
+      margin-bottom: var(--space-3);
     }
 
     .recent-unread-toolbar h2 {
@@ -144,9 +145,23 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
       margin: 0;
     }
 
+    .recent-unread-toolbar :global(.filter-row) {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+    }
+
+    /* 僅縮小首頁工具列的篩選按鈕，避免影響其他頁面的篩選介面。 */
+    .recent-unread-toolbar :global(.chip-trigger),
+    .recent-unread-toolbar :global(.chip-select) {
+      min-height: 0;
+      padding: 2px var(--space-3);
+      line-height: 1.35;
+    }
+
     .recent-unread-toolbar a {
       margin-left: auto;
-      font-size: var(--font-size-sm);
+      font-size: var(--font-size-base);
+      font-weight: var(--font-weight-medium);
       color: var(--color-primary-hover);
       white-space: nowrap;
     }
@@ -159,6 +174,10 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
       .recent-unread-toolbar :global(.filter-bar) {
         order: 3;
         flex-basis: 100%;
+      }
+
+      .recent-unread-toolbar :global(.filter-row) {
+        flex-wrap: wrap;
       }
     }
   </style>

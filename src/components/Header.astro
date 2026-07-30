@@ -93,11 +93,7 @@
   const searchForm = document.querySelector<HTMLFormElement>("#header-search-form");
   const searchInput = document.querySelector<HTMLInputElement>("#header-search-input");
   const suggestions = document.querySelector<HTMLElement>("#header-search-suggestions");
-  const SEARCH_CACHE_TTL = 5 * 60 * 1000;
-  const SEARCH_CACHE_PREFIX = "gmail-monitor:search-suggestions:";
   type SuggestedEmail = { id: string; sender: string; subject: string; snippet: string };
-  type CachedSuggestions = { expiresAt: number; emails: SuggestedEmail[] };
-  const searchCache = new Map<string, CachedSuggestions>();
   let searchRequestId = 0;
   let searchTimer: number | undefined;
   let activeSearchController: AbortController | undefined;
@@ -130,36 +126,6 @@
     return element.innerHTML;
   }
 
-  function getCachedSuggestions(query: string): SuggestedEmail[] | undefined {
-    const cached = searchCache.get(query);
-    if (cached && cached.expiresAt > Date.now()) return cached.emails;
-    searchCache.delete(query);
-
-    try {
-      const stored = sessionStorage.getItem(`${SEARCH_CACHE_PREFIX}${query}`);
-      if (!stored) return undefined;
-      const parsed = JSON.parse(stored) as CachedSuggestions;
-      if (parsed.expiresAt <= Date.now() || !Array.isArray(parsed.emails)) {
-        sessionStorage.removeItem(`${SEARCH_CACHE_PREFIX}${query}`);
-        return undefined;
-      }
-      searchCache.set(query, parsed);
-      return parsed.emails;
-    } catch {
-      return undefined;
-    }
-  }
-
-  function cacheSuggestions(query: string, emails: SuggestedEmail[]) {
-    const cached = { emails, expiresAt: Date.now() + SEARCH_CACHE_TTL };
-    searchCache.set(query, cached);
-    try {
-      sessionStorage.setItem(`${SEARCH_CACHE_PREFIX}${query}`, JSON.stringify(cached));
-    } catch {
-      // 瀏覽器禁止儲存空間時，仍保留本頁面的記憶體快取。
-    }
-  }
-
   searchInput?.addEventListener("input", () => {
     const query = searchInput.value.trim();
     window.clearTimeout(searchTimer);
@@ -167,11 +133,6 @@
     const requestId = ++searchRequestId;
     if (query.length < 2) {
       closeSuggestions();
-      return;
-    }
-    const cached = getCachedSuggestions(query);
-    if (cached) {
-      renderSuggestions(cached, query);
       return;
     }
     searchTimer = window.setTimeout(async () => {
@@ -184,14 +145,13 @@
         const result = await response.json();
         if (requestId !== searchRequestId || !response.ok) return;
         const emails = result.emails ?? [];
-        cacheSuggestions(query, emails);
         renderSuggestions(emails, query);
       } catch {
         if (requestId === searchRequestId) closeSuggestions();
       } finally {
         if (activeSearchController === controller) activeSearchController = undefined;
       }
-    }, 350);
+    }, 200);
   });
   searchInput?.addEventListener("focus", () => {
     if (searchInput.value.trim() && suggestions?.childElementCount) {

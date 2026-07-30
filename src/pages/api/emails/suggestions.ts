@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import { buildEmailSearchPatterns } from "../../../lib/emailSearch";
 import { getSupabase } from "../../../lib/supabase";
 
 interface SuggestedEmail {
@@ -15,12 +16,16 @@ export const GET: APIRoute = async ({ url }) => {
     return Response.json({ emails: [] });
   }
 
-  const { data, error } = await getSupabase()
+  let search = getSupabase()
     .from("emails" as never)
     .select("id, sender, subject, snippet")
-    .textSearch("search_vector", query, { type: "plain", config: "simple" })
-    .order("received_at", { ascending: false })
-    .limit(6);
+    .order("received_at", { ascending: false });
+
+  for (const pattern of buildEmailSearchPatterns(query)) {
+    search = search.ilike("search_text", pattern);
+  }
+
+  const { data, error } = await search.limit(6);
 
   if (error) {
     return Response.json({ error: "搜尋候選郵件失敗" }, { status: 500 });

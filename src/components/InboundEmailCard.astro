@@ -1,0 +1,144 @@
+---
+import { formatEmailDate } from "../lib/formatEmailDate";
+
+export interface Props {
+  id: string;
+  alias: string;
+  aliasLabel: string;
+  aliasColor: string | null;
+  fromAddress: string;
+  fromDisplay: string | null;
+  subject: string | null;
+  snippet: string | null;
+  hasAttachments: boolean;
+  isRead: boolean;
+  receivedAt: string;
+}
+
+const {
+  id,
+  alias,
+  aliasLabel,
+  aliasColor,
+  fromAddress,
+  fromDisplay,
+  subject,
+  snippet,
+  hasAttachments,
+  isRead,
+  receivedAt,
+} = Astro.props;
+
+const formattedDate = formatEmailDate(receivedAt);
+const aliasStyle = aliasColor ? `background:${aliasColor}; color:#fff;` : "";
+---
+
+<div class="inbound-row" class:list={{ "inbound-row--unread": !isRead }}>
+  <a href={`/inbound/${id}`} class="inbound-link">
+    <span class="unread-dot"></span>
+    <span class="badge inbound-alias-chip" style={aliasStyle} title={`${alias}@ — ${aliasLabel}`}>{aliasLabel}</span>
+    <span class="inbound-sender">{fromDisplay || fromAddress}</span>
+    <span class="inbound-subject">{subject || "(無主旨)"}</span>
+    {snippet && <span class="inbound-snippet">— {snippet}</span>}
+    {hasAttachments && (
+      <span class="material-symbols-rounded inbound-attach-icon" aria-label="含附件" title="含附件">attach_file</span>
+    )}
+  </a>
+  <time class="inbound-date" datetime={receivedAt}>{formattedDate}</time>
+</div>
+
+<style>
+  .inbound-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background-color: var(--color-surface);
+    transition: box-shadow var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .inbound-row:hover {
+    box-shadow: var(--shadow-sm);
+    z-index: 1;
+    position: relative;
+  }
+
+  .inbound-row--unread .inbound-sender,
+  .inbound-row--unread .inbound-subject {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+  }
+
+  .unread-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    flex-shrink: 0;
+    visibility: hidden;
+  }
+
+  .inbound-row--unread .unread-dot {
+    visibility: visible;
+  }
+
+  .inbound-link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    text-decoration: none;
+    color: inherit;
+    overflow: hidden;
+  }
+
+  .inbound-alias-chip {
+    flex-shrink: 0;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+  }
+
+  .inbound-sender {
+    flex-shrink: 0;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .inbound-subject {
+    flex-shrink: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+  }
+
+  .inbound-snippet {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+  }
+
+  .inbound-attach-icon {
+    flex-shrink: 0;
+    font-size: 16px;
+    color: var(--color-text-tertiary);
+  }
+
+  .inbound-date {
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+  }
+</style>

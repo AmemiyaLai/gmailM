@@ -421,6 +421,50 @@ describe("emailQueries", () => {
         expect(columns).toContain(column);
       }
     });
+
+    it("trust 欄位不存在（migration 未套用）時應退回基本欄位，清單不可變空", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      let call = 0;
+      mockQuery.then = (resolve: (v: unknown) => void) => {
+        call++;
+        if (call === 1) {
+          resolve({ data: null, error: { message: "column first_sender_events.trust_level does not exist" } });
+        } else {
+          resolve({
+            data: [{
+              sender_address: "alice@example.com",
+              first_email_id: "msg-1",
+              sender_display: "Alice",
+              first_received_at: "2026-07-26T08:00:00Z",
+              source: "live",
+              notification_status: "sent",
+              notification_attempts: 1,
+              last_notification_error: null,
+              notified_at: "2026-07-26T08:01:00Z",
+            }],
+            error: null,
+          });
+        }
+      };
+
+      const result = await getFirstSenderEvents();
+      expect(result).toHaveLength(1);
+      expect(result[0].sender_address).toBe("alice@example.com");
+      expect(result[0].trust_level).toBeNull();
+      expect(errorSpy).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it("基本欄位查詢也失敗時應回傳空陣列並記錄錯誤", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockQuery.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: null, error: { message: "connection refused" } });
+
+      const result = await getFirstSenderEvents();
+      expect(result).toEqual([]);
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+      errorSpy.mockRestore();
+    });
   });
 
   describe("getSenderGroupUnreadCounts()", () => {

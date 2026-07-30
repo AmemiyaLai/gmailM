@@ -1,0 +1,30 @@
+name: Inbound Digest
+
+on:
+  schedule:
+    # 台北時間（UTC+8）每日 07:00 與 19:00 各發送一次站點收件匣摘要
+    - cron: "0 23 * * *"
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger-inbound-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call inbound digest API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 120 -o response.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://gmailm.autodesignlab.org/api/inbound/digest")
+          echo "HTTP_STATUS: ${code}"
+          echo "--- response body ---"
+          cat response.txt || true
+          echo
+          # 明確拒絕 3xx：Cloudflare Access 的登入導向會回 302，而 curl -f 只對 >=400 失敗
+          if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
+            echo "::error::inbound-digest 回傳非 2xx（${code}）"
+            exit 1
+          fi

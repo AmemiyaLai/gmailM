@@ -39,6 +39,7 @@ vi.stubEnv("PUBSUB_TOPIC", "test-topic");
 import {
   listMessages,
   getMessage,
+  getMessageAuthHeaders,
   markAsRead,
   markAsUnread,
   setStarred,
@@ -275,6 +276,84 @@ describe("gmail.ts", () => {
 
       const msg = await getMessage("msg-1");
       expect(msg.labels).toEqual([]);
+    });
+
+    it("應將多筆 Authentication-Results 標頭以換行串接", async () => {
+      mockGet.mockResolvedValue({
+        data: {
+          id: "msg-1",
+          threadId: "t1",
+          snippet: "",
+          labelIds: [],
+          payload: {
+            headers: [
+              { name: "Authentication-Results", value: "mx.google.com; spf=pass" },
+              { name: "authentication-results", value: "forwarder.example; spf=fail" },
+              { name: "Received-SPF", value: "pass (google.com: ...)" },
+            ],
+            parts: [],
+          },
+        },
+      });
+
+      const msg = await getMessage("msg-1");
+      expect(msg.authenticationResults).toBe(
+        "mx.google.com; spf=pass\nforwarder.example; spf=fail",
+      );
+      expect(msg.receivedSpf).toBe("pass (google.com: ...)");
+    });
+
+    it("缺少驗證標頭時應為空字串", async () => {
+      mockGet.mockResolvedValue({
+        data: {
+          id: "msg-1",
+          threadId: "t1",
+          snippet: "",
+          labelIds: [],
+          payload: { headers: [], parts: [] },
+        },
+      });
+
+      const msg = await getMessage("msg-1");
+      expect(msg.authenticationResults).toBe("");
+      expect(msg.receivedSpf).toBe("");
+    });
+  });
+
+  describe("getMessageAuthHeaders()", () => {
+    it("應以 metadata 格式僅取驗證標頭", async () => {
+      mockGet.mockResolvedValue({
+        data: {
+          id: "msg-9",
+          payload: {
+            headers: [
+              { name: "From", value: "Apple <news@apple.com>" },
+              { name: "Authentication-Results", value: "mx.google.com; dmarc=pass" },
+            ],
+          },
+        },
+      });
+
+      const result = await getMessageAuthHeaders("msg-9");
+      expect(mockGet).toHaveBeenCalledWith({
+        userId: "me",
+        id: "msg-9",
+        format: "metadata",
+        metadataHeaders: ["Authentication-Results", "Received-SPF", "From"],
+      });
+      expect(result).toEqual({
+        id: "msg-9",
+        from: "Apple <news@apple.com>",
+        authenticationResults: "mx.google.com; dmarc=pass",
+        receivedSpf: "",
+      });
+    });
+
+    it("回應缺少 id 時應退回傳入的 messageId", async () => {
+      mockGet.mockResolvedValue({ data: { payload: { headers: [] } } });
+
+      const result = await getMessageAuthHeaders("msg-fallback");
+      expect(result.id).toBe("msg-fallback");
     });
   });
 

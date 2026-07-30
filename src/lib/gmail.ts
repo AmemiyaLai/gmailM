@@ -27,6 +27,29 @@ export interface GmailMessage {
   labels: string[];
   receivedAt: Date;
   isRead: boolean;
+  /** Authentication-Results 標頭原文；多筆以 "\n" 串接，無則為 ""。 */
+  authenticationResults: string;
+  /** Received-SPF 標頭原文；多筆以 "\n" 串接，無則為 ""。 */
+  receivedSpf: string;
+}
+
+/** 回填用的輕量標頭結果，見 getMessageAuthHeaders()。 */
+export interface GmailAuthHeaders {
+  id: string;
+  from: string;
+  authenticationResults: string;
+  receivedSpf: string;
+}
+
+type GmailHeader = { name?: string | null; value?: string | null };
+
+/** 取出同名標頭的全部值並以 "\n" 串接（Authentication-Results 可能有多筆）。 */
+function joinHeaders(headers: GmailHeader[], name: string): string {
+  return headers
+    .filter((h) => h.name?.toLowerCase() === name.toLowerCase())
+    .map((h) => h.value ?? "")
+    .filter(Boolean)
+    .join("\n");
 }
 
 export interface HistoryChange {
@@ -116,6 +139,30 @@ export async function getMessage(
     labels: msg.labelIds ?? [],
     receivedAt: date ? new Date(date) : new Date(),
     isRead: !(msg.labelIds ?? []).includes("UNREAD"),
+    authenticationResults: joinHeaders(headers, "Authentication-Results"),
+    receivedSpf: joinHeaders(headers, "Received-SPF"),
+  };
+}
+
+/**
+ * 只取驗證標頭的輕量查詢，供回填使用。
+ * 與 format:"full" 同為 5 quota units，但回應體積小一到兩個數量級。
+ */
+export async function getMessageAuthHeaders(messageId: string): Promise<GmailAuthHeaders> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "metadata",
+    metadataHeaders: ["Authentication-Results", "Received-SPF", "From"],
+  });
+
+  const headers = res.data.payload?.headers ?? [];
+  return {
+    id: res.data.id ?? messageId,
+    from: joinHeaders(headers, "From"),
+    authenticationResults: joinHeaders(headers, "Authentication-Results"),
+    receivedSpf: joinHeaders(headers, "Received-SPF"),
   };
 }
 

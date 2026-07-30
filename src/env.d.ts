@@ -25,6 +25,8 @@ interface ImportMetaEnv {
   readonly DISCORD_PUBLIC_KEY?: string;
   readonly GEMINI_API_KEY: string;
   readonly GEMINI_MODEL?: string;
+  /** Google Safe Browsing Lookup API v4 金鑰；未設定時略過外部信譽查詢 */
+  readonly SAFE_BROWSING_API_KEY?: string;
   readonly SITE_URL?: string;
 }
 

@@ -8,7 +8,11 @@ const { mockGenerateUnreadSummary, mockSendDiscordSummary } = vi.hoisted(() => (
 vi.mock("../../../lib/summaryService", () => ({
   generateUnreadSummary: mockGenerateUnreadSummary,
   SummaryError: class SummaryError extends Error {
-    constructor(message: string, readonly code: string) {
+    constructor(
+      message: string,
+      readonly code: string,
+      readonly detail?: string,
+    ) {
       super(message);
       this.name = "SummaryError";
     }
@@ -116,6 +120,17 @@ describe("POST /api/summaries/generate", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.error).toBe("AI 摘要產生失敗，請稍後再試。");
+  });
+
+  it("Gemini 失敗時應附帶 detail 供排查", async () => {
+    const { SummaryError } = await import("../../../lib/summaryService");
+    mockGenerateUnreadSummary.mockRejectedValue(
+      new SummaryError("Gemini summarization failed", "gemini", "API key not valid"),
+    );
+    const res = await POST(makeContext({}));
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.detail).toBe("API key not valid");
   });
 
   it("非 SummaryError 例外應回傳 500", async () => {

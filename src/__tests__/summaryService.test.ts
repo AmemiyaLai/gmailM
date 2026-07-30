@@ -108,7 +108,20 @@ describe("generateUnreadSummary()", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     setupGenerateChain({ unreadEmails: sampleUnread, lastSummary: null });
     mockSummarizeUnreadEmails.mockRejectedValueOnce(new Error("Gemini error"));
-    await expect(generateUnreadSummary()).rejects.toMatchObject({ code: "gemini" });
+    await expect(generateUnreadSummary()).rejects.toMatchObject({
+      code: "gemini",
+      detail: "Gemini error",
+    });
+  });
+
+  it("Gemini 拋出非 Error 時 detail 應為 undefined", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setupGenerateChain({ unreadEmails: sampleUnread, lastSummary: null });
+    mockSummarizeUnreadEmails.mockRejectedValueOnce("boom");
+    await expect(generateUnreadSummary()).rejects.toMatchObject({
+      code: "gemini",
+      detail: undefined,
+    });
   });
 
   it("insert 失敗時僅記錄錯誤仍回傳 ok", async () => {

@@ -10,7 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call watch-renew API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -sf -w "\nHTTP_STATUS:%{http_code}\n" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "https://gmailm.autodesignlab.org/api/gmail/watch-renew"
+          set -euo pipefail
+          code=$(curl -sS --max-time 120 -o response.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://gmailm.autodesignlab.org/api/gmail/watch-renew")
+          echo "HTTP_STATUS: ${code}"
+          echo "--- response body ---"
+          cat response.txt || true
+          echo
+          # 明確拒絕 3xx：Cloudflare Access 的登入導向會回 302，而 curl -f 只對 >=400 失敗
+          if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
+            echo "::error::watch-renew 回傳非 2xx（${code}）"
+            exit 1
+          fi

@@ -57,6 +57,9 @@ export const POST: APIRoute = async ({ request }) => {
     }
   });
 
+  // succeeded = Supabase 已提交的 ids。DB 操作是單次 .in() 全有全無，失敗會在上面提早
+  // 500 return，所以走到這裡代表 DB 端全部成功，前端必須把這些列移除才會與 DB 一致。
+  // Gmail 端的結果另見 gmailFailed。
   return new Response(JSON.stringify({ succeeded: ids, gmailFailed }), {
     status: 200,
     headers: { "Content-Type": "application/json" },

@@ -37,4 +37,52 @@ describe("email analytics", () => {
   it("查詢界限覆蓋自訂結束日完整台北曆日", () => {
     expect(rangeToQueryBounds({ preset: "custom", from: "2026-07-01", to: "2026-07-31" })).toEqual({ from: "2026-07-01T00:00:00+08:00", to: "2026-08-01T00:00:00+08:00" });
   });
+
+  it("rangeToQueryBounds 無 from/to 時應回傳空物件", () => {
+    expect(rangeToQueryBounds({ preset: "all" })).toEqual({});
+  });
+
+  it("30d 預設範圍包含過去 30 天", () => {
+    const result = parseAnalyticsRange(new URL("https://example.test/analytics?range=30d"), new Date("2026-07-26T12:00:00+08:00"));
+    expect(result).toEqual({ preset: "30d", from: "2026-06-27", to: "2026-07-26" });
+    expect(result.from).toBeDefined();
+    expect(result.to).toBeDefined();
+  });
+
+  it("90d 預設範圍包含過去 90 天", () => {
+    const result = parseAnalyticsRange(new URL("https://example.test/analytics?range=90d"), new Date("2026-07-26T12:00:00+08:00"));
+    expect(result).toEqual({ preset: "90d", from: "2026-04-28", to: "2026-07-26" });
+  });
+
+  it("未知 range 值應回退為 all", () => {
+    const result = parseAnalyticsRange(new URL("https://example.test/analytics?range=invalid"));
+    expect(result).toEqual({ preset: "all" });
+  });
+
+  it("preset=all 且有郵件時應以郵件日期區間計算 dailyAverage", () => {
+    const result = buildEmailAnalytics(emails, { preset: "all" });
+    expect(result.summary.total).toBe(3);
+    expect(result.summary.dailyAverage).toBeGreaterThan(0);
+    expect(result.trend.bucket).toBe("day");
+  });
+
+  it("preset=all 且無日期範圍時 countDays 應回退為郵件跨度", () => {
+    const result = buildEmailAnalytics(emails.slice(0, 1), { preset: "all" });
+    expect(result.summary.dailyAverage).toBe(1);
+  });
+
+  it("空郵件陣列時 summary 應為全 0", () => {
+    const result = buildEmailAnalytics([], { preset: "all" });
+    expect(result.summary.total).toBe(0);
+    expect(result.summary.unread).toBe(0);
+    expect(result.summary.dailyAverage).toBe(0);
+    expect(result.summary.unreadRate).toBe(0);
+    expect(result.summary.important).toBe(0);
+    expect(result.trend.items).toEqual([]);
+    expect(result.hours.every((h) => h.count === 0)).toBe(true);
+    expect(result.weekdays.every((w) => w.count === 0)).toBe(true);
+    expect(result.categories).toEqual([]);
+    expect(result.senders).toEqual([]);
+    expect(result.keywords).toEqual([]);
+  });
 });

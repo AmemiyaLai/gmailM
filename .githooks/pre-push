@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -eu
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/develop)
+      echo "[Git Hook] 不可直接推送至 ${remote_ref#refs/heads/}，請改以 Pull Request 合併。" >&2
+      echo "若確認需要緊急繞過，請謹慎使用 git push --no-verify。" >&2
+      exit 1
+      ;;
+  esac
+done

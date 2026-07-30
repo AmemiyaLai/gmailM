@@ -2,7 +2,10 @@ import { google } from "googleapis";
 import http from "node:http";
 import { URL } from "node:url";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+// gmail.modify 涵蓋讀取（listHistory/getMessage/listMessages/watch）與修改
+// （messages.modify 的已讀/星號/封存、messages.trash）。永久刪除才需要更大的
+// https://mail.google.com/，本專案未使用。
+const SCOPES = ["https://www.googleapis.com/auth/gmail.modify"];
 const PORT = 3847;
 
 const clientId = process.env.GMAIL_OAUTH_CLIENT_ID;

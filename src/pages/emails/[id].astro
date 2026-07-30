@@ -138,9 +138,18 @@ const badge = categoryBadge(email.category);
             const statusEl = document.getElementById("read-status");
             if (statusEl) statusEl.textContent = nextRead ? "已讀" : "未讀";
             toggleBtn.textContent = nextRead ? "標為未讀" : "標為已讀";
+            // 207：DB 已寫入但 Gmail 同步失敗，不能只看 res.ok
+            if (res.status === 207) {
+              const body = await res.json().catch(() => ({}));
+              console.warn("Gmail 同步失敗（已讀狀態）：", body.gmailError);
+              alert("已讀狀態已在網站更新，但同步到 Gmail 失敗");
+            }
+          } else {
+            alert("切換已讀狀態失敗");
           }
         } catch (err) {
           console.error("切換已讀狀態失敗：", err);
+          alert("切換已讀狀態失敗");
         } finally {
           toggleBtn.disabled = false;
         }

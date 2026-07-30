@@ -5,6 +5,7 @@
  * 使用 <slot /> 插入各頁面獨特內容。
  */
 import BaseHead from "../components/BaseHead.astro";
+import { ClientRouter } from "astro:transitions";
 import "../styles/global.css";
 
 export interface Props {
@@ -36,6 +37,7 @@ const { title, description, image, noIndex } = Astro.props;
       image={image}
       noIndex={noIndex}
     />
+    <ClientRouter />
   </head>
   <body>
     <slot />

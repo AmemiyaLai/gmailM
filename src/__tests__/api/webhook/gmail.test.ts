@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.stubEnv("CRON_SECRET", "test-secret");
 vi.stubEnv("PUBSUB_AUDIENCE", "test-audience");
 vi.stubEnv("GCP_PROJECT_ID", "myproject");
+vi.stubEnv("PUBSUB_PUSH_SERVICE_ACCOUNT", "gmail-push@myproject.iam.gserviceaccount.com");
 
 const { mockVerifyIdToken } = vi.hoisted(() => ({
   mockVerifyIdToken: vi.fn(),
@@ -76,7 +77,19 @@ vi.mock("../../../lib/pusher", () => ({
 
 import { POST } from "../../../pages/api/webhook/gmail";
 
-const VALID_TOKEN = "service-123@myproject.iam.gserviceaccount.com";
+const PUSH_SERVICE_ACCOUNT = "gmail-push@myproject.iam.gserviceaccount.com";
+
+/** 把 payload 包成 GCP Pub/Sub 標準 push envelope */
+function envelope(payload: object) {
+  return {
+    message: {
+      data: Buffer.from(JSON.stringify(payload)).toString("base64"),
+      messageId: "m1",
+      publishTime: "2026-01-01T00:00:00Z",
+    },
+    subscription: "projects/myproject/subscriptions/gmail-push",
+  };
+}
 
 function makeContext(authHeader?: string, body?: object) {
   const headers = new Headers();
@@ -90,17 +103,39 @@ function makeContext(authHeader?: string, body?: object) {
   return { request } as never;
 }
 
-function setupSupabase(opts?: { lastHistoryId?: number | null }) {
+function setupSupabase(opts?: { lastHistoryId?: number | null; existingEmailIds?: string[] }) {
   const selectResult = {
     data: opts?.lastHistoryId !== undefined ? { last_history_id: opts.lastHistoryId } : null,
     error: null,
   };
+  const existing = new Set(opts?.existingEmailIds ?? []);
 
   function makeChain() {
+    // 冪等守門用 .eq("id", messageId).maybeSingle() 查郵件是否已存在，
+    // 記下最後一次 eq 的值才能判斷該回什麼。
+    let lastEqValue: unknown;
     const chain = {
       select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue(selectResult),
+      eq: vi.fn((_col: string, value: unknown) => {
+        lastEqValue = value;
+        return chain;
+      }),
+      single: vi.fn(async () => {
+        // 當 `maybeSingle` 用於 `id` 查詢時，會透過 eq 先將 id 暫存到 lastEqValue，但為了相容
+        // 舊測試可能直接呼叫 single() 獲取 last_history_id，當有設定時優先回傳，否則回空。
+        if (selectResult.data && selectResult.data.last_history_id !== undefined) {
+          return selectResult;
+        }
+        return { data: null, error: null };
+      }),
+      maybeSingle: vi.fn(async () => {
+        if (existing.has(String(lastEqValue))) {
+          // 返回 is_important 與 category 為 undefined，代表這封信需要被豐富化 (已經存在但未豐富化)
+          // 若要完全跳過 (代表已存在且已豐富化)，可返回 { id: lastEqValue, category: "devlog" }
+          return { data: { id: lastEqValue, category: "devlog" }, error: null };
+        }
+        return { data: null, error: null };
+      }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
       update: vi.fn().mockReturnThis(),
       insert: vi.fn().mockResolvedValue({ error: null }),
@@ -114,8 +149,11 @@ function setupSupabase(opts?: { lastHistoryId?: number | null }) {
   const supabaseChain = makeChain();
   const fromMock = vi.fn(() => supabaseChain);
 
-  mockGetSupabase.mockReturnValue({ from: fromMock } as never);
-  return { chain: supabaseChain };
+  mockGetSupabase.mockReturnValue({
+    from: fromMock,
+  } as never);
+
+  return { chain: supabaseChain, fromMock };
 }
 
 describe("POST /api/webhook/gmail", () => {
@@ -123,7 +161,8 @@ describe("POST /api/webhook/gmail", () => {
     vi.clearAllMocks();
     mockVerifyIdToken.mockResolvedValue({
       getPayload: () => ({
-        email: VALID_TOKEN,
+        email: PUSH_SERVICE_ACCOUNT,
+        email_verified: true,
         azp: "123",
       }),
     });
@@ -216,12 +255,40 @@ describe("POST /api/webhook/gmail", () => {
     expect(res.status).toBe(200);
   });
 
-  it("listHistory 拋出異常時應不中斷處理", async () => {
-    setupSupabase({ lastHistoryId: 50 });
+  it("listHistory 失敗時應回 500 且不前推 last_history_id", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
     mockListHistory.mockRejectedValue(new Error("history fail"));
 
     const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+    // 前推游標會讓這區間的郵件永久遺失，必須讓 Pub/Sub 重送
+    expect(res.status).toBe(500);
+    expect(chain.update).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("應以 listHistory 回傳的 historyId 作為新游標", async () => {
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({ historyId: "321", messages: [] });
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
     expect(res.status).toBe(200);
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ last_history_id: 321 }),
+    );
+  });
+
+  it("郵件已存在於 DB 時應跳過，不重複處理與通知", async () => {
+    setupSupabase({ lastHistoryId: 50, existingEmailIds: ["msg-dup"] });
+    mockListHistory.mockResolvedValue({ historyId: "300", messages: [{ messageId: "msg-dup" }] });
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "300" }));
+
+    expect(res.status).toBe(200);
+    expect(mockGetMessage).not.toHaveBeenCalled();
+    expect(mockSendDiscordNotification).not.toHaveBeenCalled();
   });
 
   it("senderAddress 存在時應呼叫 registerFirstSender", async () => {
@@ -277,6 +344,46 @@ describe("POST /api/webhook/gmail", () => {
     expect(mockSendDiscordNotification).not.toHaveBeenCalled();
   });
 
+  it("單封郵件處理失敗時應處理完其餘郵件，但回 500 且不前推游標", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chain, fromMock } = setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({
+      messages: [{ messageId: "msg-fail" }, { messageId: "msg-ok" }],
+    });
+    mockGetMessage
+      .mockRejectedValueOnce(new Error("getMessage fail"))
+      .mockResolvedValueOnce({
+        id: "msg-ok",
+        threadId: "t-ok",
+        sender: "Ok <ok@example.com>",
+        recipient: "me@gmail.com",
+        subject: "OK",
+        snippet: "fine",
+        bodyHtml: "",
+        bodyPlain: "",
+        labels: ["INBOX"],
+        receivedAt: new Date(),
+        isRead: false,
+      });
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+    expect(res.status).toBe(500);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to process message msg-fail"), expect.any(Error));
+    // 其餘郵件仍要處理完，但游標不前推，讓 Pub/Sub 重送時補上失敗那封
+    expect(mockGetMessage).toHaveBeenCalledWith("msg-ok");
+    
+    // 檢查是否有前推 gmail_sync_state (應為不前推，即沒有呼叫 eq("watch_address", "test@gmail.com") 去 update)
+    // 雖然中間處理其他信件時有呼叫 .update() 去更新 emails 欄位，但 gmail_sync_state 的 update 應未被執行。
+    // 我們可以藉由檢查 supabase.from 傳入的 table 來驗證，但由於 mock 是共用的，
+    // 我們可以直接斷言最後沒有完成的更新，或者追蹤 from('gmail_sync_state') 的呼叫次數。
+    const syncStateUpdateCalls = fromMock.mock.calls.filter(
+      (c) => (c as unknown as [string, ...unknown[]])[0] === "gmail_sync_state",
+    );
+    // 第一次是 select 一次，之後失敗不應有第二次（也就是不進行 update）
+    expect(syncStateUpdateCalls.length).toBe(1);
+    consoleSpy.mockRestore();
+  });
+
   it("當 Discord 通知拋出異常時應 capture 錯誤不中斷處理", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     setupSupabase({ lastHistoryId: 50 });
@@ -302,5 +409,79 @@ describe("POST /api/webhook/gmail", () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to send Discord notification"), expect.any(Error));
     consoleSpy.mockRestore();
   });
-});
 
+  describe("OIDC token 驗證", () => {
+    it("token email 與 PUBSUB_PUSH_SERVICE_ACCOUNT 不符時應回 401", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockVerifyIdToken.mockResolvedValueOnce({
+        getPayload: () => ({ email: "attacker@evil.com", email_verified: true, azp: "123" }),
+      });
+
+      const res = await POST(makeContext("Bearer valid", envelope({ emailAddress: "a", historyId: "1" })));
+
+      expect(res.status).toBe(401);
+      consoleSpy.mockRestore();
+    });
+
+    it("email_verified 不為 true 時應回 401", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockVerifyIdToken.mockResolvedValueOnce({
+        getPayload: () => ({ email: PUSH_SERVICE_ACCOUNT, email_verified: false, azp: "123" }),
+      });
+
+      const res = await POST(makeContext("Bearer valid", envelope({ emailAddress: "a", historyId: "1" })));
+
+      expect(res.status).toBe(401);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("Pub/Sub 標準 push envelope", () => {
+    it("應解析 base64 包裝的 payload 並正常處理新郵件", async () => {
+      const { chain } = setupSupabase({ lastHistoryId: 50 });
+      mockListHistory.mockResolvedValue({ historyId: "250", messages: [{ messageId: "msg-1" }] });
+      mockGetMessage.mockResolvedValue({
+        id: "msg-1",
+        threadId: "t-1",
+        sender: "Test <test@example.com>",
+        recipient: "me@gmail.com",
+        subject: "Test",
+        snippet: "Test snippet",
+        bodyHtml: "<p>Test</p>",
+        bodyPlain: "Test",
+        labels: ["INBOX"],
+        receivedAt: new Date("2026-01-01T10:00:00Z"),
+        isRead: false,
+      });
+
+      const res = await POST(
+        makeContext("Bearer valid", envelope({ emailAddress: "test@gmail.com", historyId: "200" })),
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockListHistory).toHaveBeenCalledWith("50");
+      expect(mockGetMessage).toHaveBeenCalledWith("msg-1");
+      expect(chain.update).toHaveBeenCalled();
+    });
+
+    it("包裝格式的首次 baseline 記錄應回 200", async () => {
+      setupSupabase({ lastHistoryId: null });
+
+      const res = await POST(
+        makeContext("Bearer valid", envelope({ emailAddress: "test@gmail.com", historyId: "100" })),
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("initial baseline");
+    });
+
+    it("message.data 內缺少必要欄位時應回 400", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const res = await POST(makeContext("Bearer valid", envelope({ emailAddress: "a" })));
+
+      expect(res.status).toBe(400);
+      consoleSpy.mockRestore();
+    });
+  });
+});

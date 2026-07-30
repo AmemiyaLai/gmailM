@@ -6,15 +6,13 @@ import Sidebar from "../components/Sidebar.astro";
 export interface Props {
   title: string;
   description?: string;
-  showSummaries?: boolean;
-  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics";
+  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics" | "cleanup";
   activeCategory?: string | null;
 }
 
 const {
   title,
   description,
-  showSummaries = true,
   activeView,
   activeCategory,
 } = Astro.props;
@@ -24,7 +22,7 @@ const {
   <div class="app-shell">
     <Sidebar activeView={activeView} activeCategory={activeCategory} />
     <div class="app-main">
-      <Header showSummaries={showSummaries} />
+      <Header />
       <main class="container" style="padding: var(--space-6) 0 var(--space-12) 0;">
         <h1 class="sr-only">{title}</h1>
         <slot />

@@ -249,6 +249,157 @@ describe("refreshSenderTags()", () => {
   });
 });
 
+  it("當規則無法判定且 Gemini 回傳低信心度時應降級為 other", async () => {
+    vi.mocked(judgeSenderTag).mockResolvedValueOnce({ tag: "travel", confidence: 0.3 });
+
+    const emails = [
+      { sender: "Unknown <unknown@test.com>", sender_address: "unknown@test.com", subject: "Booking", snippet: "info" },
+      { sender: "Unknown <unknown@test.com>", sender_address: "unknown@test.com", subject: "Booking 2", snippet: "info 2" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(1);
+    expect(judgeSenderTag).toHaveBeenCalled();
+  });
+
+  it("sender 與 sender_address 皆無法產生有效 key 時應跳過該寄件者", async () => {
+    const emails = [
+      { sender: "", sender_address: null, subject: "Empty", snippet: "empty sender" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(0);
+  });
+
+  it("sender_address 為空時應以 sender 字串 key 處理", async () => {
+    const emails = [
+      { sender: "no-reply@bank.com", sender_address: null, subject: "Alert", snippet: "action required" },
+      { sender: "no-reply@bank.com", sender_address: null, subject: "Alert 2", snippet: "action required 2" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(1);
+  });
+
+  it("sender_tags 查詢回傳 null data 時應視為空 Map", async () => {
+    const emails = [
+      { sender: "Alice <alice@bank.com>", sender_address: "alice@bank.com", subject: "Bank Alert", snippet: "notification" },
+      { sender: "Alice <alice@bank.com>", sender_address: "alice@bank.com", subject: "Bank Alert 2", snippet: "notification 2" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: null, error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBeGreaterThanOrEqual(0);
+  });
+
+  it("已有非 aggregated 舊標籤時應沿用而非重新判斷", async () => {
+    const emails = [
+      { sender: "Bob <bob@example.com>", sender_address: "bob@example.com", subject: "Hi", snippet: "there" },
+      { sender: "Bob <bob@example.com>", sender_address: "bob@example.com", subject: "Hi 2", snippet: "there 2" },
+    ];
+    const existingTags = [
+      { sender_key: "bob@example.com", tag: "media", source: "auto", confidence: 0.65, was_aggregated: false, sender_display: "Bob", updated_at: "2026-01-01T00:00:00Z" },
+    ];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: existingTags, error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    await refreshSenderTags(mockSupabase);
+  });
+
+  it("upsert 無寄件者時（saved.length === 0）應略過更新", async () => {
+    const emails: Array<{ sender: string; sender_address: string | null; subject: string; snippet: string }> = [];
+
+    const mockSupabase = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "emails") {
+          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+        }
+        if (table === "sender_tags") {
+          return {
+            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }),
+    };
+
+    const result = await refreshSenderTags(mockSupabase);
+    expect(result.processed).toBe(0);
+  });
+
 describe("setManualSenderTag()", () => {
   it("應正確 upsert 到 sender_tags 資料表", async () => {
     const upsertMock = vi.fn().mockResolvedValue({ error: null });

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
-import { sendDiscordNotification, sendDiscordSummary, sendFirstSenderDiscordNotification } from "../lib/discord";
+import { sendDiscordNotification, sendDiscordSummary, sendFirstSenderDiscordNotification, buildCleanupReviewEmbed, buildCleanupResultEmbed, sendCleanupReview } from "../lib/discord";
 
 describe("sendDiscordNotification()", () => {
   beforeEach(() => {
@@ -117,6 +117,45 @@ describe("sendDiscordNotification()", () => {
     );
     expect(urgencyField.value).toContain("重要");
     expect(urgencyField.value).toContain("加星號");
+  });
+
+  it("SITE_URL 為空時 embeds 不應包含管理頁面欄位", async () => {
+    vi.stubEnv("SITE_URL", "");
+    const email = {
+      threadId: "thread-7",
+      sender: "x@example.com",
+      subject: "Hi",
+      snippet: "",
+      receivedAt: new Date(),
+      category: "system",
+      labels: [],
+    };
+
+    await sendDiscordNotification(email);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const managementField = body.embeds[0].fields.find(
+      (f: { name: string }) => f.name === "管理頁面",
+    );
+    expect(managementField).toBeUndefined();
+  });
+
+  it("未知分類的 categoryBadge 為 null 時應顯示 未分類", async () => {
+    const email = {
+      threadId: "thread-8",
+      sender: "x@example.com",
+      subject: "Test",
+      snippet: "",
+      receivedAt: new Date(),
+      category: "unknown_category",
+      labels: [],
+    };
+    await sendDiscordNotification(email);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const categoryField = body.embeds[0].fields.find(
+      (f: { name: string }) => f.name === "分類",
+    );
+    expect(categoryField.value).toBe("未分類");
   });
 
   it("無特殊 labels 時緊急狀況應為 —", async () => {
@@ -238,6 +277,175 @@ describe("sendDiscordSummary()", () => {
     };
 
     await expect(sendDiscordSummary(summary)).rejects.toThrow("Discord webhook failed (500)");
+  });
+
+  it("manual 為 true 時標題應標示手動發送", async () => {
+    const summary = {
+      summaryText: "手動摘要",
+      emailCount: 3,
+      periodStart: new Date(),
+      periodEnd: new Date(),
+      manual: true,
+    };
+    await sendDiscordSummary(summary);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.embeds[0].title).toContain("手動");
+  });
+});
+
+describe("buildCleanupReviewEmbed()", () => {
+  beforeEach(() => {
+    vi.stubEnv("SITE_URL", "https://gmail-monitor.vercel.app");
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("應回傳正確的 embed 結構", () => {
+    const payload = {
+      reviewId: "review-1",
+      action: "trash" as const,
+      emails: [
+        { id: "m1", sender: "a@x.com", subject: "優惠一", keyword: "優惠" },
+        { id: "m2", sender: "b@x.com", subject: "長標題" + "x".repeat(100), keyword: "測試" },
+      ],
+    };
+
+    const embed = buildCleanupReviewEmbed(payload);
+
+    expect(embed.title).toContain("刪除");
+    expect(embed.color).toBe(0xf97316);
+    expect(embed.description).toContain("2 封");
+    expect(embed.description).toContain("優惠一");
+    expect(embed.fields).toHaveLength(1);
+    expect((embed.fields as Array<{ name: string; value: string }>)[0].name).toBe("關鍵字設定");
+    expect(embed.footer).toBeDefined();
+    expect((embed.footer as { text: string }).text).toContain("垃圾桶");
+  });
+
+  it("action 為 read 時應使用對應文案與顏色", () => {
+    const payload = {
+      reviewId: "review-2",
+      action: "read" as const,
+      emails: [{ id: "m1", sender: "a@x.com", subject: "通知信", keyword: "通知" }],
+    };
+
+    const embed = buildCleanupReviewEmbed(payload);
+
+    expect(embed.title).toContain("標記已讀");
+    expect(embed.color).toBe(0x5865f2);
+    expect((embed.footer as { text: string }).text).toContain("已讀");
+  });
+
+  it("SITE_URL 為空時不應包含關鍵字設定欄位", () => {
+    vi.stubEnv("SITE_URL", "");
+    const payload = {
+      reviewId: "review-3",
+      action: "trash" as const,
+      emails: [],
+    };
+
+    const embed = buildCleanupReviewEmbed(payload);
+    expect(embed.fields).toEqual([]);
+  });
+
+  it("主旨過長時應被 truncate", () => {
+    const longSubject = "A".repeat(100);
+    const payload = {
+      reviewId: "review-4",
+      action: "trash" as const,
+      emails: [{ id: "m1", sender: "a@x.com", subject: longSubject, keyword: "測試" }],
+    };
+
+    const embed = buildCleanupReviewEmbed(payload);
+    expect(embed.description).toContain("…");
+  });
+});
+
+describe("buildCleanupResultEmbed()", () => {
+  it("approved 狀態應包含已處理數量與正確顏色", () => {
+    const embed = buildCleanupResultEmbed("trash", "approved", { processedCount: 3, failedCount: 0 });
+    expect(embed.description).toContain("3 封");
+    expect(embed.description).toContain("垃圾桶");
+    expect(embed.color).toBe(0x57f287);
+  });
+
+  it("approved 且有失敗時應顯示警告", () => {
+    const embed = buildCleanupResultEmbed("trash", "approved", { processedCount: 2, failedCount: 1 });
+    expect(embed.description).toContain("1 封處理失敗");
+    expect(embed.color).toBe(0xf97316);
+  });
+
+  it("rejected 狀態應顯示已取消與數量", () => {
+    const embed = buildCleanupResultEmbed("trash", "rejected", { emailCount: 5 });
+    expect(embed.description).toContain("已取消");
+    expect(embed.description).toContain("5 封");
+    expect(embed.color).toBe(0x99aab5);
+  });
+
+  it("already-handled 狀態應顯示已處理過", () => {
+    const embed = buildCleanupResultEmbed("read", "already-handled");
+    expect(embed.description).toContain("已經處理過");
+    expect(embed.color).toBe(0x99aab5);
+  });
+});
+
+describe("sendCleanupReview()", () => {
+  beforeEach(() => {
+    vi.stubEnv("DISCORD_BOT_TOKEN", "bot-token-123");
+    vi.stubEnv("DISCORD_CLEANUP_CHANNEL_ID", "channel-456");
+    vi.stubEnv("SITE_URL", "https://gmail-monitor.vercel.app");
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: "discord-msg-1" }) });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("應成功送出審核訊息並回傳 message id", async () => {
+    const result = await sendCleanupReview({
+      reviewId: "review-1",
+      action: "trash",
+      emails: [{ id: "m1", sender: "a@x.com", subject: "測試", keyword: "優惠" }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callUrl = fetchMock.mock.calls[0][0];
+    expect(callUrl).toContain("channels/channel-456/messages");
+    const opts = fetchMock.mock.calls[0][1];
+    expect(opts.headers.Authorization).toBe("Bot bot-token-123");
+    expect(result).toBe("discord-msg-1");
+  });
+
+  it("Discord 回傳無 id 時應回傳 null", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    const result = await sendCleanupReview({
+      reviewId: "review-2",
+      action: "read",
+      emails: [],
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("Discord 回傳錯誤時應拋出例外", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403, text: async () => "Forbidden" });
+
+    await expect(sendCleanupReview({
+      reviewId: "review-3",
+      action: "trash",
+      emails: [],
+    })).rejects.toThrow("Discord 送出清理審核失敗 (403)");
+  });
+
+  it("缺少 BOT_TOKEN 或 CHANNEL_ID 時應拋出例外", async () => {
+    vi.stubEnv("DISCORD_BOT_TOKEN", "");
+    vi.stubEnv("DISCORD_CLEANUP_CHANNEL_ID", "");
+
+    await expect(sendCleanupReview({
+      reviewId: "review-4",
+      action: "trash",
+      emails: [],
+    })).rejects.toThrow("未設定");
   });
 });
 

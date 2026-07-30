@@ -121,6 +121,37 @@ describe("approveReview() — action: trash", () => {
     expect(updatePayload.last_error).toContain("Gmail 404");
     consoleSpy.mockRestore();
   });
+
+  it("Supabase 刪除失敗時應記錄到 last_error", async () => {
+    const { calls } = mockSupabase([
+      { data: [pendingReview()], error: null },
+      { data: null, error: { message: "permission denied" } }, // emails delete 失敗
+      { data: null, error: null },
+    ]);
+
+    const result = await approveReview("review-1");
+
+    // Gmail 端已成功，仍回報成功封數，但錯誤要留痕供 /cleanup 檢視
+    expect(result).toEqual({ status: "approved", action: "trash", processedCount: 2, failedCount: 0 });
+    const updatePayload = calls[2].chain.update.mock.calls[0][0] as { last_error: string | null };
+    expect(updatePayload.last_error).toContain("permission denied");
+  });
+
+  it("全部刪除失敗時不應對 emails 表發出 delete", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockTrashMessage.mockRejectedValue(new Error("Gmail down"));
+
+    const { calls } = mockSupabase([
+      { data: [pendingReview()], error: null },
+      { data: null, error: null },
+    ]);
+
+    const result = await approveReview("review-1");
+
+    expect(result).toEqual({ status: "approved", action: "trash", processedCount: 0, failedCount: 2 });
+    expect(calls.some((c) => c.table === "emails")).toBe(false);
+    consoleSpy.mockRestore();
+  });
 });
 
 describe("getReview()", () => {

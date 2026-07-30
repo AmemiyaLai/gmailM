@@ -37,6 +37,12 @@ npm run dev             # http://localhost:4321
 | `npm run check:all` | 完整品質檢查 |
 | `npm run setup:hooks` | 啟用專案版本控制的 Git Hooks |
 
+## 設定文件
+
+| 文件 | 說明 |
+|------|------|
+| [scripts/docs/discord-bot-setup.md](scripts/docs/discord-bot-setup.md) | 關鍵字清理審核用的 Discord Bot 建立步驟（取得 token、public key、頻道 ID、Interactions Endpoint） |
+
 ## Git 安全與提交規範
 
 - 提交前會掃描暫存區，阻止 `.env`、私鑰、服務帳號、Google OAuth 憑證及常見硬編碼金鑰或密碼。

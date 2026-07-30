@@ -11,35 +11,51 @@ const { activeView = null, activeCategory = null } = Astro.props;
 ---
 
 <aside class="app-sidebar">
-  <nav class="sidebar-nav">
+  <div class="sidebar-header">
+    <button
+      id="sidebar-toggle"
+      class="sidebar-toggle"
+      type="button"
+      aria-controls="sidebar-navigation"
+      aria-expanded="true"
+      aria-label="折疊側邊欄"
+      title="折疊側邊欄"
+    >
+      <span class="material-symbols-rounded sidebar-toggle-icon" aria-hidden="true">
+        left_panel_close
+      </span>
+    </button>
+  </div>
+
+  <nav id="sidebar-navigation" class="sidebar-nav" aria-label="主要導覽">
     <div class="sidebar-section">
-      <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]}>
+      <a href="/" class:list={["sidebar-link", { active: activeView === "home" }]} aria-label="儀表板" title="儀表板">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">dashboard</span>
-        儀表板
+        <span class="sidebar-label">儀表板</span>
       </a>
-      <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]}>
+      <a href="/emails" class:list={["sidebar-link", { active: activeView === "all" }]} aria-label="全部郵件" title="全部郵件">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">mail</span>
-        全部郵件
+        <span class="sidebar-label">全部郵件</span>
       </a>
-      <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]}>
+      <a href="/unread" class:list={["sidebar-link", { active: activeView === "unread" }]} aria-label="未讀郵件" title="未讀郵件">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">mark_email_unread</span>
-        未讀郵件
+        <span class="sidebar-label">未讀郵件</span>
       </a>
-      <a href="/emails?important=1" class:list={["sidebar-link", { active: activeView === "important" }]}>
+      <a href="/emails?important=1" class:list={["sidebar-link", { active: activeView === "important" }]} aria-label="重要郵件" title="重要郵件">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">star</span>
-        重要郵件
+        <span class="sidebar-label">重要郵件</span>
       </a>
-      <a href="/senders" class:list={["sidebar-link", { active: activeView === "senders" }]}>
+      <a href="/senders" class:list={["sidebar-link", { active: activeView === "senders" }]} aria-label="常見寄件者" title="常見寄件者">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">group</span>
-        常見寄件者
+        <span class="sidebar-label">常見寄件者</span>
       </a>
-      <a href="/analytics" class:list={["sidebar-link", { active: activeView === "analytics" }]}>
+      <a href="/analytics" class:list={["sidebar-link", { active: activeView === "analytics" }]} aria-label="郵件分析" title="郵件分析">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">analytics</span>
-        郵件分析
+        <span class="sidebar-label">郵件分析</span>
       </a>
-      <a href="/first-senders" class:list={["sidebar-link", { active: activeView === "first-senders" }]}>
+      <a href="/first-senders" class:list={["sidebar-link", { active: activeView === "first-senders" }]} aria-label="首次安全紀錄" title="首次安全紀錄">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">verified_user</span>
-        首次安全紀錄
+        <span class="sidebar-label">首次安全紀錄</span>
       </a>
     </div>
 
@@ -51,33 +67,98 @@ const { activeView = null, activeCategory = null } = Astro.props;
           <a
             href={`/emails?category=${encodeURIComponent(category)}`}
             class:list={["sidebar-link", { active: activeCategory === category }]}
+            aria-label={badge?.label ?? category}
+            title={badge?.label ?? category}
           >
             {badge && <span class="sidebar-dot" style={`background:${badge.bg};`}></span>}
-            {badge?.label ?? category}
+            <span class="sidebar-label">{badge?.label ?? category}</span>
           </a>
         );
       })}
     </div>
 
     <div class="sidebar-section">
-      <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]}>
+      <a href="/summaries" class:list={["sidebar-link", { active: activeView === "summaries" }]} aria-label="摘要記錄" title="摘要記錄">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">menu_book</span>
-        摘要記錄
+        <span class="sidebar-label">摘要記錄</span>
       </a>
-      <a href="/cleanup" class:list={["sidebar-link", { active: activeView === "cleanup" }]}>
+      <a href="/cleanup" class:list={["sidebar-link", { active: activeView === "cleanup" }]} aria-label="關鍵字清理" title="關鍵字清理">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">delete_sweep</span>
-        關鍵字清理
+        <span class="sidebar-label">關鍵字清理</span>
       </a>
     </div>
   </nav>
 </aside>
 
+<script>
+  const initializeSidebarToggle = () => {
+    const toggle = document.querySelector<HTMLButtonElement>("#sidebar-toggle");
+    if (!toggle || toggle.dataset.initialized === "true") return;
+
+    const icon = toggle.querySelector<HTMLElement>(".sidebar-toggle-icon");
+
+    const updateToggle = (collapsed: boolean) => {
+      const action = collapsed ? "展開側邊欄" : "折疊側邊欄";
+      document.documentElement.dataset.sidebarCollapsed = String(collapsed);
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      toggle.setAttribute("aria-label", action);
+      toggle.title = action;
+      if (icon) icon.textContent = collapsed ? "left_panel_open" : "left_panel_close";
+    };
+
+    updateToggle(document.documentElement.dataset.sidebarCollapsed === "true");
+    toggle.addEventListener("click", () => {
+      const collapsed = document.documentElement.dataset.sidebarCollapsed !== "true";
+      updateToggle(collapsed);
+      localStorage.setItem("sidebar-collapsed", String(collapsed));
+    });
+    toggle.dataset.initialized = "true";
+  };
+
+  document.addEventListener("astro:page-load", initializeSidebarToggle);
+  initializeSidebarToggle();
+</script>
+
 <style>
+  .sidebar-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-4) var(--space-4) 0;
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-fast),
+      color var(--transition-fast),
+      border-color var(--transition-fast);
+  }
+
+  .sidebar-toggle:hover {
+    border-color: var(--color-border);
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text);
+  }
+
+  .sidebar-toggle-icon {
+    font-size: 20px;
+  }
+
   .sidebar-nav {
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
-    padding: var(--space-6) var(--space-4);
+    padding: var(--space-4) var(--space-4) var(--space-6);
   }
 
   .sidebar-section {
@@ -131,7 +212,33 @@ const { activeView = null, activeCategory = null } = Astro.props;
     flex-shrink: 0;
   }
 
+  @media (min-width: 769px) {
+    :global(html[data-sidebar-collapsed="true"]) .sidebar-header {
+      justify-content: center;
+      padding-inline: var(--space-3);
+    }
+
+    :global(html[data-sidebar-collapsed="true"]) .sidebar-nav {
+      padding-inline: var(--space-3);
+    }
+
+    :global(html[data-sidebar-collapsed="true"]) .sidebar-link {
+      justify-content: center;
+      gap: 0;
+      padding-inline: var(--space-2);
+    }
+
+    :global(html[data-sidebar-collapsed="true"]) .sidebar-label,
+    :global(html[data-sidebar-collapsed="true"]) .sidebar-heading {
+      display: none;
+    }
+  }
+
   @media (max-width: 768px) {
+    .sidebar-header {
+      display: none;
+    }
+
     .sidebar-nav {
       flex-direction: row;
       overflow-x: auto;

@@ -20,8 +20,20 @@ const { data, error } = await supabase
 const summaries = (data ?? []) as SummaryRow[];
 ---
 
-<SidebarLayout title="摘要記錄 — Gmail 即時監控面板" showSummaries={false} activeView="summaries">
-    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">每小時未讀郵件摘要</h1>
+<SidebarLayout title="摘要記錄 — Gmail 即時監控面板" activeView="summaries">
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-4);">每小時未讀郵件摘要</h1>
+
+    <p style="font-size:var(--font-size-sm); color:var(--color-text-tertiary); margin-bottom:var(--space-2);">
+      需要立即產生摘要或發送最新摘要，可使用右上角導航列的
+      <span class="material-symbols-rounded" aria-hidden="true" style="font-size:16px; vertical-align:-3px;">auto_awesome</span>
+      與
+      <span class="material-symbols-rounded" aria-hidden="true" style="font-size:16px; vertical-align:-3px;">forward_to_inbox</span>
+      按鈕。
+    </p>
+
+    <div style="min-height:1.5rem; margin-bottom:var(--space-4);">
+      <span id="summary-action-status" style="font-size:var(--font-size-sm); color:var(--color-text-tertiary);"></span>
+    </div>
 
     {error && (
       <div style="color:var(--color-error); margin-bottom:var(--space-4);">
@@ -36,9 +48,19 @@ const summaries = (data ?? []) as SummaryRow[];
             <span class="badge" style="background:var(--color-primary-muted); color:var(--color-primary-hover);">
               {s.email_count} 封未讀
             </span>
-            <time datetime={s.created_at} style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
-              {new Date(s.created_at).toLocaleString("zh-TW")}
-            </time>
+            <div style="display:flex; align-items:center; gap:var(--space-3);">
+              <button
+                type="button"
+                class="btn btn-outline send-summary-btn"
+                data-summary-id={s.id}
+                style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);"
+              >
+                發送至 Discord
+              </button>
+              <time datetime={s.created_at} style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+                {new Date(s.created_at).toLocaleString("zh-TW")}
+              </time>
+            </div>
           </div>
           <div style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-2);">
             涵蓋期間：{new Date(s.period_start).toLocaleString("zh-TW")} ～ {new Date(s.period_end).toLocaleString("zh-TW")}
@@ -55,4 +77,46 @@ const summaries = (data ?? []) as SummaryRow[];
         </div>
       )}
     </div>
+
+    <script>
+      document.addEventListener("astro:page-load", () => {
+        if (window.location.pathname !== "/summaries") return;
+        const status = document.querySelector<HTMLElement>("#summary-action-status");
+
+        function setStatus(text: string, tone: "info" | "error" = "info") {
+          if (!status) return;
+          status.textContent = text;
+          status.style.color = tone === "error" ? "var(--color-error)" : "var(--color-text-tertiary)";
+        }
+
+        async function postJson(url: string, body: unknown) {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "請求失敗");
+          return data;
+        }
+
+        document.querySelectorAll<HTMLButtonElement>(".send-summary-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = "發送中…";
+            try {
+              await postJson("/api/summaries/send-discord", { summaryId: btn.dataset.summaryId });
+              btn.textContent = "已發送";
+              setStatus("已將該筆摘要發送至 Discord。");
+            } catch (err) {
+              btn.textContent = "發送失敗";
+              setStatus(err instanceof Error ? err.message : "發送失敗，請稍後再試。", "error");
+            } finally {
+              window.setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
+            }
+          });
+        });
+      });
+    </script>
 </SidebarLayout>

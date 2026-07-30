@@ -112,6 +112,59 @@ describe("GET /api/gmail/first-sender-retry", () => {
     expect(body.sent).toBe(0);
   });
 
+  it("emails 含 null subject/snippet/category/labels 時應使用預設值", async () => {
+    const rows = [
+      {
+        sender_address: "b@test.com",
+        first_email_id: "2",
+        sender_display: "B",
+        first_received_at: "2026-01-01",
+        source: "live",
+        notification_status: "pending",
+        notification_attempts: 0,
+        last_notification_error: null,
+        notified_at: null,
+        emails: {
+          thread_id: "t2",
+          sender: "B <b@test.com>",
+          subject: null,
+          snippet: null,
+          received_at: "2026-01-01T00:00:00Z",
+          category: null,
+          labels: null,
+        },
+      },
+    ];
+    setupSupabase(rows);
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    expect(mockDeliverFirstSenderNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        subject: "",
+        snippet: "",
+        category: "uncategorized",
+        labels: [],
+      }),
+    );
+  });
+
+  it("data 為 null 但無 error 時應回傳 0 attempted 0 sent", async () => {
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    mockGetSupabase.mockReturnValue({ from: vi.fn(() => chain) } as never);
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.attempted).toBe(0);
+    expect(body.sent).toBe(0);
+  });
+
   it("deliverFirstSenderNotification 回傳 false 時 sent 不應增加", async () => {
     mockDeliverFirstSenderNotification.mockResolvedValueOnce(false);
     const rows = [

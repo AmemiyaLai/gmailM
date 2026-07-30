@@ -45,7 +45,7 @@ const { groups, unreadCounts, topSenders } = Astro.props;
           </div>
         </div>
 
-        {/* Top 3 寄件人：合法的 <a> 在 <div> 內 */}
+        {/* 依卡片可用寬度顯示寄件人，最多排滿兩行 */}
         {tops.length > 0 && (
           <div class="sgcard-senders">
             {tops.map((ts) => (
@@ -66,19 +66,23 @@ const { groups, unreadCounts, topSenders } = Astro.props;
 </div>
 
 <script>
-  // 外層卡片點擊導航（排除內部連結自己的點擊）
-  document.querySelectorAll<HTMLElement>(".sgcard[data-href]").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-      // 若點到內部的 <a>（寄件人按鈕），讓其自然導航，不攔截
-      if (target.closest("a")) return;
-      window.location.href = card.dataset.href!;
-    });
-    card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        window.location.href = card.dataset.href!;
-      }
+  import { navigate } from "astro:transitions/client";
+
+  document.addEventListener("astro:page-load", () => {
+    // 外層卡片點擊導航（排除內部連結自己的點擊）
+    document.querySelectorAll<HTMLElement>(".sgcard[data-href]").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        const target = e.target as HTMLElement;
+        // 若點到內部的 <a>（寄件人按鈕），讓其自然導航，不攔截
+        if (target.closest("a")) return;
+        navigate(card.dataset.href!);
+      });
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          navigate(card.dataset.href!);
+        }
+      });
     });
   });
 </script>
@@ -175,17 +179,22 @@ const { groups, unreadCounts, topSenders } = Astro.props;
     color: var(--color-text-tertiary);
   }
 
-  /* ── Top 3 寄件人按鈕 ── */
+  /* ── 寄件人按鈕：依可用寬度自動填滿，最多兩行 ── */
   .sgcard-senders {
-    display: flex;
-    flex-wrap: wrap;
+    --sender-row-height: 27px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr));
+    grid-auto-rows: var(--sender-row-height);
     gap: var(--space-1);
     margin-top: var(--space-2);
+    max-height: calc(var(--sender-row-height) * 2 + var(--space-1));
+    overflow: hidden;
   }
 
   .sgcard-sender-btn {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 4px;
     padding: 3px var(--space-2);
     background: var(--color-bg-tertiary);
@@ -195,7 +204,8 @@ const { groups, unreadCounts, topSenders } = Astro.props;
     font-weight: var(--font-weight-medium);
     color: var(--color-text-secondary);
     text-decoration: none;
-    max-width: 100%;
+    width: 100%;
+    min-width: 0;
     overflow: hidden;
     cursor: pointer;
     transition:
@@ -211,10 +221,10 @@ const { groups, unreadCounts, topSenders } = Astro.props;
   }
 
   .sgcard-sender-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 80px;
   }
 
   .sgcard-sender-count {

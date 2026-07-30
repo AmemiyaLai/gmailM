@@ -25,12 +25,12 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json", "html"],
       reportsDirectory: "./coverage",
-      // 覆蓋率閾值（視專案需求調整）
+      // 覆蓋率閾值
       thresholds: {
-        statements: 60,
-        branches: 60,
-        functions: 60,
-        lines: 60,
+        statements: 95,
+        branches: 80,
+        functions: 90,
+        lines: 95,
       },
       // 排除不需要計算覆蓋率的檔案
       exclude: [

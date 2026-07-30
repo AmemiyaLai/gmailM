@@ -58,6 +58,27 @@ describe("reclassifyEmails()", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it("select 回傳 error 時應拋出", async () => {
+    mockSelect.mockReturnValueOnce({ range: vi.fn().mockResolvedValue({ data: null, error: { message: "select error" } }) });
+    await expect(reclassifyEmails()).rejects.toThrow();
+  });
+
+  it("update 回傳 error 時應拋出", async () => {
+    mockSelect.mockReturnValueOnce(
+      rangeResult([
+        { id: "1", sender: "noreply@github.com", subject: "PR", category: "uncategorized" },
+      ]),
+    );
+    mockEq.mockResolvedValue({ error: { message: "update error" } });
+    await expect(reclassifyEmails()).rejects.toThrow();
+  });
+
+  it("空結果集應回傳 0", async () => {
+    mockSelect.mockReturnValueOnce(rangeResult([]));
+    const result = await reclassifyEmails();
+    expect(result).toEqual({ total: 0, updated: 0, unchanged: 0 });
+  });
+
   it("應分頁抓取直到沒有更多資料", async () => {
     const page1 = Array.from({ length: 500 }, (_, i) => ({
       id: String(i),

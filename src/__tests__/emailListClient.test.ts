@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { initEmailList } from "../lib/emailListClient";
 
 interface MockElement {
@@ -27,6 +27,7 @@ interface MockElement {
   closest: (sel: string) => MockElement | null;
   matches: (sel: string) => boolean;
   insertBefore: (newChild: MockElement, refChild: MockElement) => void;
+  appendChild: (child: MockElement) => void;
   addEventListener: (event: string, fn: (e: any) => void) => void;
   dispatchEvent: (e: any) => void;
   remove: () => void;
@@ -145,6 +146,10 @@ function createMockElement(tagName = "DIV", initialClassName = ""): MockElement 
       if (idx >= 0) children.splice(idx, 0, newChild);
       else children.push(newChild);
     },
+    appendChild(child: MockElement) {
+      child.parentElement = el;
+      children.push(child);
+    },
     addEventListener(event: string, fn: (e: any) => void) {
       if (!listeners[event]) listeners[event] = [];
       listeners[event].push(fn);
@@ -172,6 +177,13 @@ function appendChild(parent: MockElement, child: MockElement) {
   parent.children.push(child);
 }
 
+/** 取得目前 document.body 底下所有 toast 的文字，用來驗證錯誤提示 */
+function getToastMessages(): string[] {
+  const host = (globalThis.document as unknown as { body: MockElement }).body
+    .children.find((c) => c.classList.contains("toast-host"));
+  return host ? host.children.map((t) => t.textContent) : [];
+}
+
 describe("initEmailList unit tests", () => {
   const originalDocument = globalThis.document;
   const originalCSS = globalThis.CSS;
@@ -179,8 +191,11 @@ describe("initEmailList unit tests", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     globalThis.CSS = { escape: (s: string) => s } as typeof CSS;
+    const body = createMockElement("BODY");
     const doc = {
       createElement: (tag: string) => createMockElement(tag),
+      body,
+      querySelector: (sel: string) => body.querySelector(sel),
     };
     globalThis.document = doc as unknown as Document;
   });
@@ -583,6 +598,166 @@ describe("initEmailList unit tests", () => {
 
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+
+  describe("Gmail 同步失敗提示", () => {
+    it("star 回 207 時應保留新狀態並顯示未同步提示", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 207,
+        json: async () => ({ status: "recorded", gmailSync: "failed", gmailError: "403 insufficient scopes" }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const parent = createMockElement("DIV");
+      const container = createMockElement("DIV");
+      appendChild(parent, container);
+
+      const row = createMockElement("DIV", "email-row");
+      row.dataset.id = "msg-207";
+      row.dataset.starred = "false";
+      const starBtn = createMockElement("BUTTON", "star-btn");
+      appendChild(starBtn, createMockElement("SPAN", "star-icon"));
+      appendChild(row, starBtn);
+      appendChild(container, row);
+
+      initEmailList(container as unknown as HTMLElement);
+      container.dispatchEvent({
+        type: "click", target: starBtn,
+        preventDefault: vi.fn(), stopPropagation: vi.fn(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      // DB 已寫入，UI 不該回滾
+      expect(row.dataset.starred).toBe("true");
+      expect(getToastMessages()).toEqual(["星號已在網站更新，但同步到 Gmail 失敗"]);
+      warnSpy.mockRestore();
+    });
+
+    it("read 回 207 時應更新 UI 並顯示未同步提示", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 207,
+        json: async () => ({ status: "recorded", gmailSync: "failed" }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const parent = createMockElement("DIV");
+      const container = createMockElement("DIV");
+      appendChild(parent, container);
+
+      const row = createMockElement("DIV", "email-row email-row--unread");
+      row.dataset.id = "msg-207-read";
+      row.dataset.read = "false";
+      const actionBtn = createMockElement("BUTTON", "action-btn");
+      actionBtn.dataset.action = "read";
+      appendChild(row, actionBtn);
+      appendChild(container, row);
+
+      initEmailList(container as unknown as HTMLElement);
+      container.dispatchEvent({
+        type: "click", target: actionBtn,
+        preventDefault: vi.fn(), stopPropagation: vi.fn(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(row.dataset.read).toBe("true");
+      expect(getToastMessages()).toEqual(["已讀狀態已在網站更新，但同步到 Gmail 失敗"]);
+      warnSpy.mockRestore();
+    });
+
+    it("read 回非 2xx 時應顯示錯誤提示", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const parent = createMockElement("DIV");
+      const container = createMockElement("DIV");
+      appendChild(parent, container);
+
+      const row = createMockElement("DIV", "email-row email-row--unread");
+      row.dataset.id = "msg-500-read";
+      row.dataset.read = "false";
+      const actionBtn = createMockElement("BUTTON", "action-btn");
+      actionBtn.dataset.action = "read";
+      appendChild(row, actionBtn);
+      appendChild(container, row);
+
+      initEmailList(container as unknown as HTMLElement);
+      container.dispatchEvent({
+        type: "click", target: actionBtn,
+        preventDefault: vi.fn(), stopPropagation: vi.fn(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(row.dataset.read).toBe("false");
+      expect(getToastMessages()).toEqual(["標示已讀失敗"]);
+      consoleSpy.mockRestore();
+    });
+
+    it("bulk 回傳 gmailFailed 時應仍移除 row 並顯示未同步提示", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ succeeded: ["msg-a", "msg-b"], gmailFailed: ["msg-b"] }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const parent = createMockElement("DIV");
+      const container = createMockElement("DIV");
+      appendChild(parent, container);
+
+      for (const id of ["msg-a", "msg-b"]) {
+        const row = createMockElement("DIV", "email-row");
+        row.dataset.id = id;
+        appendChild(container, row);
+      }
+
+      const trigger = createMockElement("BUTTON", "action-btn");
+      trigger.dataset.action = "trash";
+      appendChild(container.children[0], trigger);
+
+      initEmailList(container as unknown as HTMLElement);
+      container.dispatchEvent({
+        type: "click", target: trigger,
+        preventDefault: vi.fn(), stopPropagation: vi.fn(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      // DB 已刪除，兩列都必須移除，否則畫面會與 DB 不一致
+      expect(container.children.length).toBe(0);
+      expect(getToastMessages()).toEqual(["1 封已在網站刪除，但未同步到 Gmail"]);
+    });
+
+    it("bulk 回非 2xx 時應顯示錯誤提示且不移除 row", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const parent = createMockElement("DIV");
+      const container = createMockElement("DIV");
+      appendChild(parent, container);
+
+      const row = createMockElement("DIV", "email-row");
+      row.dataset.id = "msg-bulk-500";
+      appendChild(container, row);
+      const trigger = createMockElement("BUTTON", "action-btn");
+      trigger.dataset.action = "archive";
+      appendChild(row, trigger);
+
+      initEmailList(container as unknown as HTMLElement);
+      container.dispatchEvent({
+        type: "click", target: trigger,
+        preventDefault: vi.fn(), stopPropagation: vi.fn(),
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(container.children.length).toBe(1);
+      expect(getToastMessages()).toEqual(["批次封存失敗"]);
+      consoleSpy.mockRestore();
+    });
   });
 });
 

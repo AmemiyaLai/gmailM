@@ -1,0 +1,412 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import { CLEANUP_FIELDS, cleanupFieldLabels, listKeywords, type CleanupAction, type CleanupField } from "../lib/cleanupKeywords";
+import { listReviews } from "../lib/cleanupReview";
+
+const [keywords, reviews] = await Promise.all([listKeywords(), listReviews(20)]);
+
+const statusLabels: Record<string, { label: string; color: string }> = {
+  pending: { label: "等待審核", color: "var(--color-warning, #f97316)" },
+  approved: { label: "已處理", color: "var(--color-success, #16a34a)" },
+  rejected: { label: "已取消", color: "var(--color-text-tertiary)" },
+  failed: { label: "發送失敗", color: "var(--color-error)" },
+};
+
+const actionBadgeColor: Record<CleanupAction, string> = {
+  trash: "var(--color-error)",
+  read: "var(--color-primary-hover)",
+};
+
+/**
+ * 依實際信箱資料分析出的建議關鍵字（見對話紀錄），一鍵套用到新增表單。
+ * field="sender" 時比對的是「顯示名稱 <email>」整串，因此用中文顯示名稱比對通常比 email 網域更精準
+ * （多家公司會共用同一個轉發網域，例如蝦皮、Adobe、Paddle 都經 tradevan.com.tw 轉發電子發票）。
+ */
+const suggestions: { keyword: string; field: CleanupField; action: CleanupAction; note: string }[] = [
+  { keyword: "udnpaper.com", field: "sender", action: "trash", note: "經濟日報會員報（單一寄件者，安全）" },
+  { keyword: "即將撥款賣家", field: "subject", action: "trash", note: "蝦皮訂單即將撥款通知" },
+  { keyword: "info@newsletter.shopee.tw", field: "sender", action: "trash", note: "蝦皮行銷電子報（與訂單通知是不同寄件位址）" },
+  { keyword: "hello@duolingo.com", field: "sender", action: "trash", note: "Duolingo 學習提醒信" },
+  { keyword: "hello@mail.grammarly.com", field: "sender", action: "trash", note: "Grammarly 行銷信" },
+  { keyword: "國泰綜合證券日對帳單", field: "subject", action: "read", note: "國泰證券日對帳單（單一寄件者，標記已讀留存）" },
+  { keyword: "國泰世華銀行消費彙整通知", field: "subject", action: "read", note: "國泰世華信用卡消費彙整" },
+  { keyword: "國泰綜合證券成交回報", field: "subject", action: "read", note: "國泰證券成交回報" },
+  { keyword: "全聯電子發票服務消費通知", field: "subject", action: "read", note: "全聯電子發票" },
+  { keyword: "發票已開立", field: "subject", action: "read", note: "PX Pay 小時達訂單發票" },
+];
+---
+
+<SidebarLayout title="關鍵字清理 — Gmail 即時監控面板" activeView="cleanup">
+  <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-2);">關鍵字清理</h1>
+  <p style="font-size:var(--font-size-sm); color:var(--color-text-tertiary); margin-bottom:var(--space-6);">
+    每個關鍵字綁定「刪除」或「標記已讀」兩種動作之一。命中的郵件會在每天 07:00 與 19:00 依動作分開彙整成 Discord 審核訊息，
+    你在 Discord 按下按鈕確認後才會實際執行——刪除的會移到 Gmail 垃圾桶（可復原），標記已讀不會刪除郵件。
+  </p>
+
+  <!-- 新增關鍵字 -->
+  <section class="card" style="padding:var(--space-4); margin-bottom:var(--space-6);">
+    <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-3);">新增關鍵字</h2>
+    <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
+      <input
+        type="text"
+        id="keyword-input"
+        placeholder="例如：github.com、經濟日報、noreply@example.com"
+        style="flex:1 1 260px; padding:var(--space-2) var(--space-3); border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-bg); color:var(--color-text); font-size:var(--font-size-sm);"
+      />
+      <select
+        id="field-select"
+        style="padding:var(--space-2) var(--space-3); border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-bg); color:var(--color-text); font-size:var(--font-size-sm);"
+      >
+        {CLEANUP_FIELDS.map((field) => (
+          <option value={field}>{cleanupFieldLabels[field]}</option>
+        ))}
+      </select>
+      <select
+        id="action-select"
+        style="padding:var(--space-2) var(--space-3); border:1px solid var(--color-border); border-radius:var(--radius-md); background:var(--color-bg); color:var(--color-text); font-size:var(--font-size-sm);"
+      >
+        <option value="trash">🗑️ 刪除</option>
+        <option value="read">📩 標記已讀</option>
+      </select>
+      <button type="button" class="btn btn-primary" id="add-keyword">新增</button>
+      <button type="button" class="btn btn-outline" id="dispatch-review">立即送審至 Discord</button>
+    </div>
+
+    <div id="preview-status" style="margin-top:var(--space-3); font-size:var(--font-size-sm); color:var(--color-text-tertiary);">
+      輸入關鍵字即可即時預覽會篩到哪些郵件（近 30 天）。
+    </div>
+    <div id="preview-list" style="margin-top:var(--space-3); display:flex; flex-direction:column; gap:var(--space-2);"></div>
+  </section>
+
+  <!-- 建議關鍵字 -->
+  <section class="card" style="padding:var(--space-4); margin-bottom:var(--space-6);">
+    <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-1);">建議關鍵字</h2>
+    <p style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-3);">
+      依你信箱裡的實際寄件模式分析，點擊即可套用到上方表單（仍需按「新增」才會儲存）。
+    </p>
+    <div style="display:flex; flex-direction:column; gap:var(--space-2);">
+      {suggestions.map((s) => (
+        <button
+          type="button"
+          class="btn btn-outline suggestion-btn"
+          data-keyword={s.keyword}
+          data-field={s.field}
+          data-action={s.action}
+          style="display:flex; align-items:center; gap:var(--space-3); justify-content:flex-start; text-align:left; padding:var(--space-2) var(--space-3); font-size:var(--font-size-xs);"
+        >
+          <span class="badge" style={`background:var(--color-bg-tertiary); color:${actionBadgeColor[s.action]}; flex-shrink:0;`}>
+            {s.action === "trash" ? "🗑️ 刪除" : "📩 已讀"}
+          </span>
+          <code style="flex-shrink:0;">{s.keyword}</code>
+          <span style="color:var(--color-text-tertiary);">（{cleanupFieldLabels[s.field]}）{s.note}</span>
+        </button>
+      ))}
+    </div>
+  </section>
+
+  <!-- 關鍵字清單 -->
+  <section style="margin-bottom:var(--space-8);">
+    <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-3);">目前的關鍵字（{keywords.length}）</h2>
+
+    {keywords.length === 0 && (
+      <div style="text-align:center; padding:var(--space-8) 0; color:var(--color-text-tertiary); font-size:var(--font-size-sm);">
+        尚未設定任何關鍵字。
+      </div>
+    )}
+
+    <div style="display:flex; flex-direction:column; gap:var(--space-2);">
+      {keywords.map((k) => (
+        <div class="card keyword-row" data-id={k.id} data-keyword={k.keyword} data-field={k.field} style="padding:var(--space-3) var(--space-4);">
+          <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
+            <span class="badge" style={`background:var(--color-bg-tertiary); color:${actionBadgeColor[k.action]};`}>
+              {k.action === "trash" ? "🗑️ 刪除" : "📩 已讀"}
+            </span>
+            <code style="font-size:var(--font-size-sm); font-weight:var(--font-weight-medium);">{k.keyword}</code>
+            <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-secondary);">
+              {cleanupFieldLabels[k.field] ?? k.field}
+            </span>
+            {!k.enabled && (
+              <span class="badge" style="background:var(--color-bg-tertiary); color:var(--color-text-tertiary);">已停用</span>
+            )}
+            <span class="match-count" style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">命中數載入中…</span>
+            <div style="margin-left:auto; display:flex; gap:var(--space-2);">
+              <button type="button" class="btn btn-outline toggle-btn" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);" data-enabled={String(k.enabled)}>
+                {k.enabled ? "停用" : "啟用"}
+              </button>
+              <button type="button" class="btn btn-outline expand-btn" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs);">
+                查看郵件
+              </button>
+              <button type="button" class="btn btn-outline delete-btn" style="padding:var(--space-1) var(--space-3); font-size:var(--font-size-xs); color:var(--color-error);">
+                刪除
+              </button>
+            </div>
+          </div>
+          <div class="matched-emails" style="display:none; margin-top:var(--space-3); padding-top:var(--space-3); border-top:1px solid var(--color-border); flex-direction:column; gap:var(--space-2);"></div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- 審核記錄 -->
+  <section>
+    <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-3);">審核記錄</h2>
+
+    {reviews.length === 0 && (
+      <div style="text-align:center; padding:var(--space-8) 0; color:var(--color-text-tertiary); font-size:var(--font-size-sm);">
+        尚無審核記錄。
+      </div>
+    )}
+
+    <div style="display:flex; flex-direction:column; gap:var(--space-2);">
+      {reviews.map((r) => (
+        <div class="card" style="padding:var(--space-3) var(--space-4);">
+          <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap;">
+            <span class="badge" style={`background:var(--color-bg-tertiary); color:${actionBadgeColor[r.action]};`}>
+              {r.action === "trash" ? "🗑️ 刪除" : "📩 已讀"}
+            </span>
+            <span class="badge" style={`background:var(--color-bg-tertiary); color:${statusLabels[r.status]?.color ?? "var(--color-text-secondary)"};`}>
+              {statusLabels[r.status]?.label ?? r.status}
+            </span>
+            <span style="font-size:var(--font-size-sm);">{r.email_count} 封郵件</span>
+            {r.status === "approved" && (
+              <span style="font-size:var(--font-size-sm); color:var(--color-text-secondary);">
+                {r.action === "trash" ? "已移至垃圾桶" : "已標記已讀"} {r.processed_count ?? 0} 封
+              </span>
+            )}
+            <time datetime={r.created_at} style="margin-left:auto; font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+              {new Date(r.created_at).toLocaleString("zh-TW")}
+            </time>
+          </div>
+          {r.last_error && (
+            <p style="margin-top:var(--space-2); font-size:var(--font-size-xs); color:var(--color-error); white-space:pre-line;">
+              {r.last_error}
+            </p>
+          )}
+          <details style="margin-top:var(--space-2);">
+            <summary style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); cursor:pointer;">涵蓋的郵件</summary>
+            <ul style="margin-top:var(--space-2); display:flex; flex-direction:column; gap:var(--space-1);">
+              {(r.matched ?? []).map((m) => (
+                <li style="font-size:var(--font-size-xs); color:var(--color-text-secondary);">
+                  {m.subject} — {m.sender}（🔑 {m.keyword}）
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <script>
+    interface PreviewEmail {
+      id: string;
+      sender: string;
+      subject: string | null;
+      snippet: string | null;
+      received_at?: string;
+    }
+
+    const previewStatus = document.querySelector<HTMLElement>("#preview-status");
+    const previewList = document.querySelector<HTMLElement>("#preview-list");
+    const keywordInput = document.querySelector<HTMLInputElement>("#keyword-input");
+    const fieldSelect = document.querySelector<HTMLSelectElement>("#field-select");
+    const actionSelect = document.querySelector<HTMLSelectElement>("#action-select");
+
+    function setStatus(text: string, tone: "info" | "error" = "info") {
+      if (!previewStatus) return;
+      previewStatus.textContent = text;
+      previewStatus.style.color = tone === "error" ? "var(--color-error)" : "var(--color-text-tertiary)";
+    }
+
+    async function fetchPreview(keyword: string, field: string) {
+      const params = new URLSearchParams({ keyword, field });
+      const res = await fetch(`/api/cleanup/preview?${params}`);
+      if (!res.ok) throw new Error("預覽失敗");
+      return (await res.json()) as { total: number; emails: PreviewEmail[] };
+    }
+
+    async function sendJson(url: string, method: string, body: unknown) {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "請求失敗");
+      return data;
+    }
+
+    function emailRow(email: PreviewEmail): HTMLElement {
+      const row = document.createElement("div");
+      row.style.cssText = "font-size:var(--font-size-xs); color:var(--color-text-secondary); line-height:1.5;";
+      const subject = document.createElement("div");
+      subject.style.color = "var(--color-text)";
+      subject.textContent = email.subject || "(無主旨)";
+      const meta = document.createElement("div");
+      meta.style.color = "var(--color-text-tertiary)";
+      const when = email.received_at ? ` · ${new Date(email.received_at).toLocaleString("zh-TW")}` : "";
+      meta.textContent = `${email.sender || "(未知)"}${when}`;
+      row.append(subject, meta);
+      return row;
+    }
+
+    function renderPreview(container: HTMLElement, emails: PreviewEmail[]) {
+      container.replaceChildren(...emails.map(emailRow));
+    }
+
+    // ── 輸入時 debounce 即時預覽（關鍵字尚未儲存也能看到效果，action 不影響比對結果）──
+    let debounceTimer: number | undefined;
+    function schedulePreview() {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(async () => {
+        const keyword = keywordInput?.value.trim() ?? "";
+        if (!keyword) {
+          setStatus("輸入關鍵字即可即時預覽會篩到哪些郵件（近 30 天）。");
+          previewList?.replaceChildren();
+          return;
+        }
+        setStatus("預覽中…");
+        try {
+          const result = await fetchPreview(keyword, fieldSelect?.value ?? "any");
+          setStatus(`目前會篩到 ${result.total} 封郵件${result.total > result.emails.length ? `（以下顯示前 ${result.emails.length} 封）` : ""}。`);
+          if (previewList) renderPreview(previewList, result.emails);
+        } catch (err) {
+          setStatus(err instanceof Error ? err.message : "預覽失敗", "error");
+        }
+      }, 300);
+    }
+
+    keywordInput?.addEventListener("input", schedulePreview);
+    fieldSelect?.addEventListener("change", schedulePreview);
+
+    // ── 建議關鍵字：一鍵帶入表單 ──
+    document.querySelectorAll<HTMLButtonElement>(".suggestion-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (keywordInput) keywordInput.value = btn.dataset.keyword ?? "";
+        if (fieldSelect) fieldSelect.value = btn.dataset.field ?? "any";
+        if (actionSelect) actionSelect.value = btn.dataset.action ?? "trash";
+        keywordInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+        keywordInput?.focus();
+        schedulePreview();
+      });
+    });
+
+    // ── 新增關鍵字 ──
+    const addBtn = document.querySelector<HTMLButtonElement>("#add-keyword");
+    addBtn?.addEventListener("click", async () => {
+      const keyword = keywordInput?.value.trim() ?? "";
+      if (!keyword) {
+        setStatus("請先輸入關鍵字。", "error");
+        return;
+      }
+      addBtn.disabled = true;
+      try {
+        await sendJson("/api/cleanup/keywords", "POST", {
+          keyword,
+          field: fieldSelect?.value ?? "any",
+          action: actionSelect?.value ?? "trash",
+        });
+        setStatus("已新增關鍵字。");
+        window.setTimeout(() => window.location.reload(), 500);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : "新增失敗", "error");
+      } finally {
+        addBtn.disabled = false;
+      }
+    });
+
+    // ── 立即送審（會分別嘗試「刪除」與「已讀」兩條審核線）──
+    const dispatchBtn = document.querySelector<HTMLButtonElement>("#dispatch-review");
+    dispatchBtn?.addEventListener("click", async () => {
+      dispatchBtn.disabled = true;
+      setStatus("送出審核訊息中…");
+      try {
+        const result = await sendJson("/api/cleanup/dispatch", "POST", {});
+        const results = (result.results ?? []) as Array<
+          { action: string; status: "ok"; emailCount: number } | { action: string; status: "skipped"; reason: string }
+        >;
+        const summary = results
+          .map((r) => {
+            const label = r.action === "trash" ? "刪除" : "已讀";
+            return r.status === "ok" ? `${label}：已送出 ${r.emailCount} 封` : `${label}：無新命中`;
+          })
+          .join("　");
+        setStatus(summary || "沒有可送審的郵件。");
+        if (results.some((r) => r.status === "ok")) {
+          window.setTimeout(() => window.location.reload(), 1200);
+        }
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : "送出失敗", "error");
+      } finally {
+        dispatchBtn.disabled = false;
+      }
+    });
+
+    // ── 每列關鍵字：命中數、展開、啟用/停用、刪除 ──
+    document.querySelectorAll<HTMLElement>(".keyword-row").forEach((row) => {
+      const id = row.dataset.id ?? "";
+      const keyword = row.dataset.keyword ?? "";
+      const field = row.dataset.field ?? "any";
+      const countEl = row.querySelector<HTMLElement>(".match-count");
+      const listEl = row.querySelector<HTMLElement>(".matched-emails");
+
+      let cached: PreviewEmail[] | null = null;
+
+      void (async () => {
+        try {
+          const result = await fetchPreview(keyword, field);
+          cached = result.emails;
+          if (countEl) countEl.textContent = `命中 ${result.total} 封`;
+        } catch {
+          if (countEl) countEl.textContent = "命中數查詢失敗";
+        }
+      })();
+
+      row.querySelector<HTMLButtonElement>(".expand-btn")?.addEventListener("click", async (event) => {
+        const btn = event.currentTarget as HTMLButtonElement;
+        if (!listEl) return;
+        if (listEl.style.display !== "none") {
+          listEl.style.display = "none";
+          btn.textContent = "查看郵件";
+          return;
+        }
+        if (!cached) {
+          try {
+            cached = (await fetchPreview(keyword, field)).emails;
+          } catch {
+            cached = [];
+          }
+        }
+        renderPreview(listEl, cached);
+        if (cached.length === 0) listEl.textContent = "目前沒有命中的郵件。";
+        listEl.style.display = "flex";
+        btn.textContent = "收合";
+      });
+
+      row.querySelector<HTMLButtonElement>(".toggle-btn")?.addEventListener("click", async (event) => {
+        const btn = event.currentTarget as HTMLButtonElement;
+        btn.disabled = true;
+        try {
+          await sendJson("/api/cleanup/keywords", "PATCH", { id, enabled: btn.dataset.enabled !== "true" });
+          window.location.reload();
+        } catch (err) {
+          setStatus(err instanceof Error ? err.message : "更新失敗", "error");
+          btn.disabled = false;
+        }
+      });
+
+      row.querySelector<HTMLButtonElement>(".delete-btn")?.addEventListener("click", async (event) => {
+        const btn = event.currentTarget as HTMLButtonElement;
+        if (!window.confirm(`確定要刪除關鍵字「${keyword}」嗎？`)) return;
+        btn.disabled = true;
+        try {
+          await sendJson("/api/cleanup/keywords", "DELETE", { id });
+          row.remove();
+        } catch (err) {
+          setStatus(err instanceof Error ? err.message : "刪除失敗", "error");
+          btn.disabled = false;
+        }
+      });
+    });
+  </script>
+</SidebarLayout>

@@ -183,7 +183,9 @@ describe("syncEmailsFromGmail()", () => {
   });
 
   it("當產生 firstEvent 時應更新 is_first_sender 欄位，失敗時計入 failed", async () => {
-    const mockUpdate = vi.fn().mockResolvedValue({ error: { message: "update failed" } });
+    const mockUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: { message: "update failed" } }),
+    });
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === "emails") {
         return {

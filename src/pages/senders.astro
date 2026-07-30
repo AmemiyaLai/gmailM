@@ -84,46 +84,52 @@ const senderTags = await getSenderTags(getSupabase());
   )}
 
   <script>
-    document.querySelectorAll<HTMLTableRowElement>(".sender-row").forEach((row) => {
-      const btn = row.querySelector<HTMLButtonElement>(".sender-apply-btn");
-      const select = row.querySelector<HTMLSelectElement>(".sender-tag-select");
-      if (!btn || !select) return;
+    import { navigate } from "astro:transitions/client";
 
-      const sender = row.dataset.sender!;
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        try {
-          const res = await fetch("/api/senders/tag", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender, tag: select.value }),
-          });
-          if (!res.ok) throw new Error("Failed");
-          btn.textContent = "已套用";
-          setTimeout(() => { btn.textContent = "套用"; }, 1500);
-        } catch {
-          btn.textContent = "失敗";
-          setTimeout(() => { btn.textContent = "套用"; }, 1500);
-        } finally {
-          btn.disabled = false;
-        }
+    document.addEventListener("astro:page-load", () => {
+      if (window.location.pathname !== "/senders") return;
+
+      document.querySelectorAll<HTMLTableRowElement>(".sender-row").forEach((row) => {
+        const btn = row.querySelector<HTMLButtonElement>(".sender-apply-btn");
+        const select = row.querySelector<HTMLSelectElement>(".sender-tag-select");
+        if (!btn || !select) return;
+
+        const sender = row.dataset.sender!;
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          try {
+            const res = await fetch("/api/senders/tag", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sender, tag: select.value }),
+            });
+            if (!res.ok) throw new Error("Failed");
+            btn.textContent = "已套用";
+            setTimeout(() => { btn.textContent = "套用"; }, 1500);
+          } catch {
+            btn.textContent = "失敗";
+            setTimeout(() => { btn.textContent = "套用"; }, 1500);
+          } finally {
+            btn.disabled = false;
+          }
+        });
       });
-    });
 
-    const refresh = document.querySelector<HTMLButtonElement>("#refresh-sender-tags");
-    const status = document.querySelector<HTMLElement>("#refresh-sender-tags-status");
-    refresh?.addEventListener("click", async () => {
-      refresh.disabled = true;
-      if (status) status.textContent = "整理中…";
-      try {
-        const res = await fetch("/api/senders/tags/refresh", { method: "POST" });
-        const result = await res.json() as { processed?: number; aggregated?: number };
-        if (!res.ok) throw new Error("Failed");
-        if (status) status.textContent = `已整理 ${result.processed ?? 0} 位寄件者，聚合 ${result.aggregated ?? 0} 個標籤。`;
-        window.setTimeout(() => window.location.reload(), 600);
-      } catch {
-        if (status) status.textContent = "整理失敗，請稍後再試。";
-      } finally { refresh.disabled = false; }
+      const refresh = document.querySelector<HTMLButtonElement>("#refresh-sender-tags");
+      const status = document.querySelector<HTMLElement>("#refresh-sender-tags-status");
+      refresh?.addEventListener("click", async () => {
+        refresh.disabled = true;
+        if (status) status.textContent = "整理中…";
+        try {
+          const res = await fetch("/api/senders/tags/refresh", { method: "POST" });
+          const result = await res.json() as { processed?: number; aggregated?: number };
+          if (!res.ok) throw new Error("Failed");
+          if (status) status.textContent = `已整理 ${result.processed ?? 0} 位寄件者，聚合 ${result.aggregated ?? 0} 個標籤。`;
+          window.setTimeout(() => navigate("/senders", { history: "replace" }), 600);
+        } catch {
+          if (status) status.textContent = "整理失敗，請稍後再試。";
+        } finally { refresh.disabled = false; }
+      });
     });
   </script>
 </SidebarLayout>

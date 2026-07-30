@@ -96,6 +96,10 @@ const emails = (data ?? []) as EmailResult[];
 
     <script>
       import { initEmailList } from "../lib/emailListClient";
-      initEmailList(document.getElementById("email-list")!);
+      document.addEventListener("astro:page-load", () => {
+        if (window.location.pathname !== "/search") return;
+        const list = document.getElementById("email-list");
+        if (list) initEmailList(list);
+      });
     </script>
 </SidebarLayout>

@@ -9,6 +9,7 @@ import { judgeEmailImportance } from "../../../lib/gemini";
 import { normalizeSenderAddress } from "../../../lib/senderAddress";
 import { deliverFirstSenderNotification, registerFirstSender } from "../../../lib/firstSender";
 import { refreshSenderTags } from "../../../lib/senderTagService";
+import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub";
 
 interface SyncStateRow {
   watch_address: string;
@@ -20,6 +21,10 @@ const AUDIENCE = import.meta.env.PUBSUB_AUDIENCE;
 async function verifyPubSubToken(
   token: string,
 ): Promise<boolean> {
+  // 訂閱上明確指定的 push service account。Google 不保證能從 token 的其他欄位
+  // 推導出這個值，唯一可靠的做法是從設定讀取預期值後比對。
+  const expectedEmail = import.meta.env.PUBSUB_PUSH_SERVICE_ACCOUNT;
+
   try {
     const client = new OAuth2Client();
     const ticket = await client.verifyIdToken({
@@ -29,9 +34,28 @@ async function verifyPubSubToken(
     const payload = ticket.getPayload();
     if (!payload) return false;
 
-    const serviceEmail = `service-${payload.azp}@${import.meta.env.GCP_PROJECT_ID}.iam.gserviceaccount.com`;
-    return payload.email === serviceEmail;
-  } catch {
+    if (payload.email_verified !== true) {
+      console.error("Pub/Sub token 的 email_verified 不為 true：", payload.email);
+      return false;
+    }
+
+    if (!expectedEmail) {
+      console.error(
+        `PUBSUB_PUSH_SERVICE_ACCOUNT 未設定，拒絕請求。實際收到的 token email = ${payload.email}`,
+      );
+      return false;
+    }
+
+    if (payload.email !== expectedEmail) {
+      console.error(
+        `Pub/Sub token email 不符：收到 ${payload.email}，預期 ${expectedEmail}`,
+      );
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Pub/Sub token 驗證失敗:", err);
     return false;
   }
 }
@@ -49,17 +73,22 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response("Invalid token", { status: 401 });
   }
 
-  let body: { emailAddress?: string; historyId?: string };
+  const pusher = getPusher();
+
+  let raw: PubSubPushBody;
   try {
-    body = await request.json();
+    raw = await request.json();
   } catch {
+    console.error("Webhook: request body 非合法 JSON");
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { emailAddress, historyId } = body;
-  if (!emailAddress || !historyId) {
+  const notification = parseGmailNotification(raw);
+  if (!notification) {
+    console.error("Webhook: 無法解析 Pub/Sub payload:", JSON.stringify(raw).slice(0, 500));
     return new Response("Missing fields", { status: 400 });
   }
+  const { emailAddress, historyId } = notification;
 
   const supabase = getSupabase();
 
@@ -80,17 +109,73 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response("OK — initial baseline recorded", { status: 200 });
   }
 
+  // 只有整段處理都成功才前推 last_history_id，否則回非 2xx 讓 Pub/Sub 重送，
+  // 避免尚未寫入的郵件因為游標前推而永久遺失。
+  let latestHistoryId = String(lastHistoryId);
+  let hadFailure = false;
+
   try {
-    const { messages } = await listHistory(String(lastHistoryId));
+    const { historyId: fetchedHistoryId, messages } = await listHistory(String(lastHistoryId));
+    // 以最後一次成功 history.list 回應的 historyId 為準（Gmail 官方建議）
+    latestHistoryId = fetchedHistoryId || historyId;
+
 
     for (const { messageId } of messages) {
       try {
+        // 冪等守門：重送時已處理過的郵件直接跳過，避免重複處理
+        const { data: existing } = await supabase
+          .from("emails" as never)
+          .select("id, is_important, category")
+          .eq("id", messageId)
+          .maybeSingle() as { data: { id: string; is_important?: boolean; category?: string | null } | null };
+
+        if (existing) {
+          // 如果已經有基礎信件但還沒有進行 Gemini 豐富化，可以在此補齊，否則跳過
+          if (existing.category !== undefined) {
+            continue;
+          }
+        }
+
         const gmailMsg = await getMessage(messageId);
-        const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
         const senderAddress = normalizeSenderAddress(gmailMsg.sender);
 
+        // --- 階段一：極速寫入與 `new-email` 推送 ---
+        if (!existing) {
+          const { error: initialUpsert } = await supabase.from("emails" as never).upsert(
+            {
+              id: gmailMsg.id,
+              thread_id: gmailMsg.threadId,
+              sender: gmailMsg.sender,
+              sender_address: senderAddress,
+              recipient: gmailMsg.recipient,
+              subject: gmailMsg.subject,
+              snippet: gmailMsg.snippet,
+              body_html: gmailMsg.bodyHtml,
+              body_plain: gmailMsg.bodyPlain,
+              labels: gmailMsg.labels,
+              received_at: gmailMsg.receivedAt.toISOString(),
+              is_read: gmailMsg.isRead,
+            } as never,
+            { onConflict: "id" },
+          );
+          if (initialUpsert) throw initialUpsert;
+
+          // 毫秒級向前端推送 new-email 事件，此時為極簡 payload
+          await pusher.trigger("gmail-channel", "new-email", {
+            id: gmailMsg.id,
+            sender: gmailMsg.sender,
+            subject: gmailMsg.subject,
+            snippet: gmailMsg.snippet,
+            received_at: gmailMsg.receivedAt.toISOString(),
+            is_read: gmailMsg.isRead,
+          }).catch((e) => console.error("Pusher new-email trigger failed:", e));
+        }
+
+        // --- 階段二：異步/順序執行 AI 判斷與特徵豐富化 ---
+        const category = classifyEmail({ sender: gmailMsg.sender, subject: gmailMsg.subject });
         let important = gmailMsg.labels.includes("IMPORTANT"); // Gemini 失敗時的 fallback
         let importanceReason: string | undefined;
+
         try {
           const judged = await judgeEmailImportance({
             sender: gmailMsg.sender,
@@ -103,33 +188,14 @@ export const POST: APIRoute = async ({ request }) => {
           console.error(`Gemini importance judge failed for ${messageId}, falling back to IMPORTANT label:`, err);
         }
 
-        const { error: emailUpsertError } = await supabase.from("emails" as never).upsert(
+        const { error: enrichError } = await supabase.from("emails" as never).update(
           {
-            id: gmailMsg.id,
-            thread_id: gmailMsg.threadId,
-            sender: gmailMsg.sender,
-            sender_address: senderAddress,
-            recipient: gmailMsg.recipient,
-            subject: gmailMsg.subject,
-            snippet: gmailMsg.snippet,
-            body_html: gmailMsg.bodyHtml,
-            body_plain: gmailMsg.bodyPlain,
-            labels: gmailMsg.labels,
-            received_at: gmailMsg.receivedAt.toISOString(),
-            is_read: gmailMsg.isRead,
             category,
             is_important: important,
             importance_reason: importanceReason ?? null,
           } as never,
-          { onConflict: "id" },
-        );
-        if (emailUpsertError) throw emailUpsertError;
-
-        if (important) {
-          await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
-            console.error(`Failed to send Discord notification for ${messageId}:`, err),
-          );
-        }
+        ).eq("id", gmailMsg.id);
+        if (enrichError) throw enrichError;
 
         let isFirstSender = false;
         if (senderAddress) {
@@ -154,34 +220,51 @@ export const POST: APIRoute = async ({ request }) => {
           }
         }
 
-        const pusher = getPusher();
-        await pusher.trigger("gmail-channel", "new-email", {
+        // 推送特徵增強事件給前端，使卡片動態長出分類 Badge 與重要標記
+        await pusher.trigger("gmail-channel", "email-enriched", {
           id: gmailMsg.id,
-          sender: gmailMsg.sender,
-          subject: gmailMsg.subject,
-          snippet: gmailMsg.snippet,
-          received_at: gmailMsg.receivedAt.toISOString(),
           category,
           is_important: important,
           is_first_sender: isFirstSender,
-        });
+        }).catch((e) => console.error("Pusher email-enriched trigger failed:", e));
+
+        if (important) {
+          await sendDiscordNotification({ ...gmailMsg, category }).catch((err) =>
+            console.error(`Failed to send Discord notification for ${messageId}:`, err),
+          );
+        }
+
       } catch (err) {
         console.error(`Failed to process message ${messageId}:`, err);
+        hadFailure = true;
       }
     }
   } catch (err) {
     console.error("listHistory failed:", err);
+    return new Response("listHistory failed", { status: 500 });
+  }
+
+  if (hadFailure) {
+    console.error("部分郵件處理失敗，保留 last_history_id 以待 Pub/Sub 重送");
+    return new Response("Partial failure", { status: 500 });
   }
 
   await supabase
     .from("gmail_sync_state" as never)
     .update({
-      last_history_id: Number(historyId),
+      last_history_id: Number(latestHistoryId),
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
 
   await refreshSenderTags(supabase).catch((error) => console.error("Sender tag refresh failed:", error));
 
+  // 推送同步完成事件，通知前端同步游標已前進
+  await pusher.trigger("gmail-channel", "sync-complete", {
+    last_history_id: latestHistoryId,
+    updated_at: new Date().toISOString(),
+  }).catch((e) => console.error("Pusher sync-complete trigger failed:", e));
+
   return new Response("OK", { status: 200 });
 };
+

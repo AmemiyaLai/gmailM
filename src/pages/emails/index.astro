@@ -161,6 +161,10 @@ for (const email of emails) {
 
   <script>
     import { initEmailList } from "../../lib/emailListClient";
-    initEmailList(document.getElementById("email-list")!);
+    document.addEventListener("astro:page-load", () => {
+      if (window.location.pathname !== "/emails") return;
+      const list = document.getElementById("email-list");
+      if (list) initEmailList(list);
+    });
   </script>
 </SidebarLayout>

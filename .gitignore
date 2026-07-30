@@ -62,3 +62,12 @@ service-account*.json
 *-credentials.json
 client_secret_*.json
 *.apps.googleusercontent.com.json
+scripts/credentials/
+*.log
+COVERAGE.md
+coverage-report.txt
+nul
+nul/
+
+
+

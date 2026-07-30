@@ -37,7 +37,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
       limit: 10,
     }),
     getSenderGroupUnreadCounts(SENDER_GROUPS),
-    getSenderGroupTopSenders(SENDER_GROUPS, 3),
+    getSenderGroupTopSenders(SENDER_GROUPS, 8),
   ]);
 ---
 
@@ -101,51 +101,15 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
   </div>
 
   <script>
-    import Pusher from "pusher-js";
-    import { buildEmailRowElement } from "../lib/emailCardHtml";
     import { initEmailList } from "../lib/emailListClient";
 
-    const statusEl = document.getElementById("connection-status")!;
-    const listEl = document.getElementById("email-list")!;
+    document.addEventListener("astro:page-load", () => {
+      if (window.location.pathname !== "/") return;
+      const listEl = document.getElementById("email-list");
+      if (listEl) initEmailList(listEl);
 
-    initEmailList(listEl);
-
-    const importantRowEl = document.getElementById("important-email-row");
-    if (importantRowEl) initEmailList(importantRowEl);
-
-    const pusher = new Pusher(import.meta.env.PUBLIC_PUSHER_KEY, {
-      cluster: import.meta.env.PUBLIC_PUSHER_CLUSTER,
+      const importantRowEl = document.getElementById("important-email-row");
+      if (importantRowEl) initEmailList(importantRowEl);
     });
-
-    const channel = pusher.subscribe("gmail-channel");
-
-    channel.bind("pusher:subscription_succeeded", () => {
-      statusEl.textContent = "已連線";
-      statusEl.style.background = "var(--color-primary-muted)";
-      statusEl.style.color = "var(--color-primary-hover)";
-    });
-
-    channel.bind("pusher:subscription_error", () => {
-      statusEl.textContent = "連線失敗";
-      statusEl.style.background = "rgba(239,68,68,0.15)";
-      statusEl.style.color = "var(--color-error)";
-    });
-
-    channel.bind(
-      "new-email",
-      (data: {
-        id: string;
-        sender: string;
-        subject: string;
-        snippet: string;
-        received_at: string;
-        category?: string;
-        is_important?: boolean;
-        is_starred?: boolean;
-        is_first_sender?: boolean;
-      }) => {
-        listEl.prepend(buildEmailRowElement(data));
-      },
-    );
   </script>
 </SidebarLayout>

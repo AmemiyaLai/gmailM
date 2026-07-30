@@ -17,9 +17,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
       - name: Quality checks
         run: npm run check:all
+      - name: Lint and complexity checks (advisory)
+        continue-on-error: true
+        run: npm run lint

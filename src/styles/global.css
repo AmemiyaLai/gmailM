@@ -500,3 +500,52 @@ pre code {
     flex: none;
   }
 }
+
+/* ─── Toast 提示 ─────────────────────────────────────────────
+   用於「DB 已更新但 Gmail 同步失敗」這類部分成功的情況，
+   避免失敗被靜默吞掉而看起來像成功。 */
+.toast-host {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(360px, calc(100vw - var(--space-8)));
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--space-3);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-error);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  pointer-events: auto;
+}
+
+.toast--warn {
+  border-left-color: var(--color-warning);
+}
+
+/* ─── 動態新信提示動畫 ─── */
+.email-row--new-pulse {
+  animation: emailNewPulse 2s ease-in-out infinite;
+}
+
+@keyframes emailNewPulse {
+  0% {
+    background-color: var(--color-surface);
+  }
+  50% {
+    background-color: var(--color-primary-muted);
+  }
+  100% {
+    background-color: var(--color-surface);
+  }
+}
+

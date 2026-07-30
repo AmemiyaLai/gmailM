@@ -130,6 +130,22 @@ describe("GET /api/gmail/hourly-summary", () => {
     expect(body.emailCount).toBe(1);
   });
 
+  it("未讀郵件 data 為 null 時應視為空陣列並跳過", async () => {
+    mockSyncEmailsFromGmail.mockResolvedValueOnce({ imported: 0, failed: 0 });
+    const emailsChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    const fromMock = vi.fn(() => emailsChain);
+    mockGetSupabase.mockReturnValue({ from: fromMock } as never);
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("skipped");
+    expect(body.reason).toBe("no unread emails");
+  });
+
   it("DB 查詢未讀郵件失敗時應回傳 500", async () => {
     mockSyncEmailsFromGmail.mockResolvedValueOnce({ imported: 0, failed: 0 });
     setupSupabaseChain({ unreadError: { message: "db error" } });
@@ -148,6 +164,36 @@ describe("GET /api/gmail/hourly-summary", () => {
     mockSummarizeUnreadEmails.mockRejectedValueOnce(new Error("Gemini error"));
     const res = await GET(makeContext("Bearer test-secret"));
     expect(res.status).toBe(502);
+  });
+
+  it("summary insert 失敗時應記錄錯誤但不影響回應", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    setupSupabaseChain({
+      unreadEmails: [
+        { sender: "a@test.com", subject: "Hi", snippet: "...", category: "devlog", received_at: "2026-01-01T10:00:00Z" },
+      ],
+      lastSummary: null,
+      insertError: { message: "insert failed" },
+    });
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("failed to save summary row"), expect.any(Object));
+    consoleSpy.mockRestore();
+  });
+
+  it("Discord summary 發送失敗時應僅記錄錯誤不影響回應", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    setupSupabaseChain({
+      unreadEmails: [
+        { sender: "a@test.com", subject: "Hi", snippet: "...", category: "devlog", received_at: "2026-01-01T10:00:00Z" },
+      ],
+      lastSummary: null,
+    });
+    mockSendDiscordSummary.mockRejectedValueOnce(new Error("Discord error"));
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Discord send failed"), expect.any(Error));
+    consoleSpy.mockRestore();
   });
 
   it("已有相同或更新的 summary 時應跳過", async () => {

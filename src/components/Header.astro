@@ -3,15 +3,9 @@
  * Header 元件
  * 提供包含網頁左上角 Logo、品牌標題與頂部導航之共用導航列。
  */
-export interface Props {
-  /** 是否顯示摘要記錄按鈕 */
-  showSummaries?: boolean;
-}
-
-const { showSummaries = true } = Astro.props;
 ---
 
-<header class="site-header">
+<header class="site-header" transition:persist="site-header">
   <div class="container header-content">
     <!-- 左上角 品牌 Logo 區塊 -->
     <a href="/" class="brand-link" title="回 Gmail Monitor 首頁">
@@ -28,25 +22,27 @@ const { showSummaries = true } = Astro.props;
     <!-- 右側導航與連線狀態 -->
     <nav class="header-nav">
       <div class="header-search-wrap">
-        <button id="search-toggle" type="button" class="btn btn-outline nav-btn search-toggle-btn" title="搜尋郵件" aria-label="搜尋郵件" aria-expanded="false">
-          <span class="material-symbols-rounded search-icon" aria-hidden="true">search</span>
-        </button>
         <form id="header-search-form" class="header-search" action="/search" method="get">
           <input type="text" name="q" id="header-search-input" placeholder="搜尋寄件者 / 主旨 / 內文摘要" autocomplete="off" />
         </form>
+        <button id="search-toggle" type="button" class="btn btn-outline nav-btn search-toggle-btn" title="搜尋郵件" aria-label="搜尋郵件" aria-expanded="false">
+          <span class="material-symbols-rounded search-icon" aria-hidden="true">search</span>
+        </button>
       </div>
-      {showSummaries && (
-        <a href="/summaries" class="btn btn-outline nav-btn">
-          <span class="material-symbols-rounded search-icon" aria-hidden="true">menu_book</span>
-          <span>摘要記錄</span>
-        </a>
-      )}
       <span id="connection-status" class="badge connection-badge">
         連線中...
       </span>
-      <button id="sync-now" type="button" class="btn btn-outline nav-btn" title="立即從 Gmail 同步最新郵件">
+      <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即從 Gmail 同步最新郵件" aria-label="立即同步">
         <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
-        <span>立即同步</span>
+        <span class="sr-only" data-sync-label>立即同步</span>
+      </button>
+      <button id="generate-summary" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即產生未讀郵件的 AI 摘要" aria-label="立即產生 AI 摘要">
+        <span class="material-symbols-rounded search-icon" data-summary-icon aria-hidden="true">auto_awesome</span>
+        <span class="sr-only" data-summary-label>立即產生 AI 摘要</span>
+      </button>
+      <button id="send-summary-discord" type="button" class="btn btn-outline nav-btn icon-only-btn" title="將最新 AI 摘要發送至 Discord" aria-label="發送最新摘要至 Discord">
+        <span class="material-symbols-rounded search-icon" data-discord-icon aria-hidden="true">forward_to_inbox</span>
+        <span class="sr-only" data-discord-label>發送最新摘要至 Discord</span>
       </button>
       <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
         <span id="theme-icon-light" class="material-symbols-rounded theme-icon" aria-hidden="true">light_mode</span>
@@ -54,99 +50,189 @@ const { showSummaries = true } = Astro.props;
       </button>
     </nav>
   </div>
+  <div id="header-action-toast" class="header-toast" role="status" aria-live="polite" hidden></div>
 </header>
 
-<script is:inline>
-  (function () {
-    var btn = document.getElementById("theme-toggle");
-    var lightIcon = document.getElementById("theme-icon-light");
-    var darkIcon = document.getElementById("theme-icon-dark");
+<script>
+  import { navigate } from "astro:transitions/client";
+  import { startRealtimeConnection } from "../lib/realtimeClient";
 
-    function syncIcons() {
-      var isDark = document.documentElement.dataset.theme === "dark";
-      lightIcon.style.display = isDark ? "none" : "block";
-      darkIcon.style.display = isDark ? "block" : "none";
+  const INITIAL_SYNC_KEY = "gmail-monitor:initial-sync-completed";
+
+  startRealtimeConnection();
+
+  const themeBtn = document.querySelector<HTMLButtonElement>("#theme-toggle");
+  const lightIcon = document.querySelector<HTMLElement>("#theme-icon-light");
+  const darkIcon = document.querySelector<HTMLElement>("#theme-icon-dark");
+
+  function syncThemeIcons() {
+    const isDark = document.documentElement.dataset.theme === "dark";
+    if (lightIcon) lightIcon.style.display = isDark ? "none" : "block";
+    if (darkIcon) darkIcon.style.display = isDark ? "block" : "none";
+  }
+
+  syncThemeIcons();
+  themeBtn?.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    syncThemeIcons();
+  });
+
+  const searchWrap = document.querySelector<HTMLElement>(".header-search-wrap");
+  const searchToggle = document.querySelector<HTMLButtonElement>("#search-toggle");
+  const searchInput = document.querySelector<HTMLInputElement>("#header-search-input");
+
+  function closeSearch() {
+    searchWrap?.classList.remove("header-search-wrap--open");
+    searchToggle?.setAttribute("aria-expanded", "false");
+  }
+
+  searchToggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const isOpen = searchWrap?.classList.contains("header-search-wrap--open");
+    if (isOpen) {
+      closeSearch();
+    } else {
+      searchWrap?.classList.add("header-search-wrap--open");
+      searchToggle.setAttribute("aria-expanded", "true");
+      searchInput?.focus();
     }
+  });
+  searchWrap?.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", closeSearch);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSearch();
+  });
+  document.addEventListener("astro:after-swap", () => {
+    const stored = localStorage.getItem("theme");
+    document.documentElement.dataset.theme = stored === "light" ? "light" : "dark";
+    syncThemeIcons();
+  });
 
-    syncIcons();
+  async function syncEmails(automatic = false) {
+    const syncBtn = document.querySelector<HTMLButtonElement>("#sync-now");
+    const syncLabel = document.querySelector<HTMLElement>("[data-sync-label]");
+    if (!syncBtn || !syncLabel || syncBtn.disabled) return;
 
-    btn.addEventListener("click", function () {
-      var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = next;
-      localStorage.setItem("theme", next);
-      syncIcons();
+    const defaultLabel = "立即同步";
+    syncBtn.disabled = true;
+    syncLabel.textContent = automatic ? "首次同步中..." : "同步中...";
+
+    try {
+      const res = await fetch("/api/gmail/sync", { method: "POST" });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || "同步失敗");
+
+      sessionStorage.setItem(INITIAL_SYNC_KEY, "1");
+      syncLabel.textContent = `已同步 ${result.imported ?? 0} 封`;
+
+      if ((result.imported ?? 0) > 0) {
+        window.setTimeout(() => {
+          navigate(window.location.pathname + window.location.search, { history: "replace" });
+        }, 500);
+      }
+    } catch {
+      if (automatic) sessionStorage.removeItem(INITIAL_SYNC_KEY);
+      syncLabel.textContent = "同步失敗";
+    } finally {
+      window.setTimeout(() => {
+        syncBtn.disabled = false;
+        syncLabel.textContent = defaultLabel;
+      }, 2500);
+    }
+  }
+
+  document.querySelector<HTMLButtonElement>("#sync-now")?.addEventListener("click", () => {
+    void syncEmails(false);
+  });
+
+  const toast = document.querySelector<HTMLElement>("#header-action-toast");
+  let toastTimer: number | undefined;
+
+  function showToast(message: string, tone: "info" | "success" | "error" = "info") {
+    if (!toast) return;
+    toast.textContent = message;
+    toast.dataset.tone = tone;
+    toast.hidden = false;
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
+  }
+
+  async function postJson(url: string, body: unknown) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
-  })();
-</script>
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "請求失敗");
+    return data;
+  }
 
-<script is:inline>
-  (function () {
-    var syncBtn = document.getElementById("sync-now");
-    var syncLabel = syncBtn.querySelector("span");
-    var defaultLabel = syncLabel.textContent;
-
-    syncBtn.addEventListener("click", function () {
-      if (syncBtn.disabled) return;
-      syncBtn.disabled = true;
-      syncLabel.textContent = "同步中...";
-
-      fetch("/api/gmail/sync", { method: "POST" })
-        .then(function (res) { return res.json(); })
-        .then(function (result) {
-          syncLabel.textContent = result.error ? "同步失敗" : "已同步 " + result.imported + " 封";
-          if (!result.error) {
-            setTimeout(function () { window.location.reload(); }, 800);
-          }
-        })
-        .catch(function () {
-          syncLabel.textContent = "同步失敗";
-        })
-        .finally(function () {
-          setTimeout(function () {
-            syncBtn.disabled = false;
-            syncLabel.textContent = defaultLabel;
-          }, 2500);
-        });
-    });
-  })();
-</script>
-
-<script is:inline>
-  (function () {
-    var wrap = document.querySelector(".header-search-wrap");
-    var toggleBtn = document.getElementById("search-toggle");
-    var input = document.getElementById("header-search-input");
-
-    function close() {
-      wrap.classList.remove("header-search-wrap--open");
-      toggleBtn.setAttribute("aria-expanded", "false");
+  /** icon-only 按鈕在執行期間換成沙漏，結束後復原，避免使用者重複點擊 */
+  async function runHeaderAction(
+    btn: HTMLButtonElement,
+    icon: HTMLElement | null,
+    task: () => Promise<void>,
+  ) {
+    if (btn.disabled) return;
+    const defaultIcon = icon?.textContent ?? "";
+    btn.disabled = true;
+    if (icon) icon.textContent = "hourglass_top";
+    try {
+      await task();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "操作失敗，請稍後再試。", "error");
+    } finally {
+      if (icon) icon.textContent = defaultIcon;
+      btn.disabled = false;
     }
+  }
 
-    function open() {
-      wrap.classList.add("header-search-wrap--open");
-      toggleBtn.setAttribute("aria-expanded", "true");
-      input.focus();
-    }
+  const summaryBtn = document.querySelector<HTMLButtonElement>("#generate-summary");
+  summaryBtn?.addEventListener("click", () => {
+    const icon = summaryBtn.querySelector<HTMLElement>("[data-summary-icon]");
+    void runHeaderAction(summaryBtn, icon, async () => {
+      showToast("AI 摘要產生中…");
+      const result = await postJson("/api/summaries/generate", { sendDiscord: false });
 
-    toggleBtn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      if (wrap.classList.contains("header-search-wrap--open")) {
-        close();
-      } else {
-        open();
+      if (result.status === "skipped") {
+        showToast(
+          result.reason === "no unread emails"
+            ? "目前沒有未讀郵件，無需產生摘要。"
+            : "已跳過：沒有新的未讀郵件。",
+        );
+        return;
+      }
+
+      showToast(`已產生 ${result.emailCount} 封未讀郵件的 AI 摘要。`, "success");
+      if (window.location.pathname === "/summaries" || window.location.pathname === "/") {
+        window.setTimeout(() => {
+          navigate(window.location.pathname + window.location.search, { history: "replace" });
+        }, 800);
       }
     });
+  });
 
-    wrap.addEventListener("click", function (e) {
-      e.stopPropagation();
+  const discordBtn = document.querySelector<HTMLButtonElement>("#send-summary-discord");
+  discordBtn?.addEventListener("click", () => {
+    const icon = discordBtn.querySelector<HTMLElement>("[data-discord-icon]");
+    void runHeaderAction(discordBtn, icon, async () => {
+      showToast("發送最新摘要至 Discord…");
+      await postJson("/api/summaries/send-discord", {});
+      showToast("已將最新 AI 摘要發送至 Discord。", "success");
     });
+  });
 
-    document.addEventListener("click", close);
+  if (!sessionStorage.getItem(INITIAL_SYNC_KEY)) {
+    sessionStorage.setItem(INITIAL_SYNC_KEY, "pending");
+    void syncEmails(true);
+  }
 
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") close();
-    });
-  })();
+  document.addEventListener("astro:page-load", () => {
+    syncThemeIcons();
+  });
 </script>
 
 <style>
@@ -272,7 +358,6 @@ const { showSummaries = true } = Astro.props;
   }
 
   .header-search-wrap {
-    position: relative;
     display: flex;
     align-items: center;
   }
@@ -282,24 +367,28 @@ const { showSummaries = true } = Astro.props;
   }
 
   .header-search {
-    position: absolute;
-    right: 0;
-    top: calc(100% + var(--space-2));
     width: 0;
+    flex: 0 0 auto;
     overflow: hidden;
     opacity: 0;
     pointer-events: none;
-    transition: width var(--transition-base), opacity var(--transition-base);
+    margin-right: 0;
+    transition:
+      width var(--transition-base),
+      margin-right var(--transition-base),
+      opacity var(--transition-base),
+      border-color var(--transition-base);
     background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-full);
-    box-shadow: var(--shadow-md);
   }
 
   .header-search-wrap--open .header-search {
     width: 260px;
+    margin-right: var(--space-2);
     opacity: 1;
     pointer-events: auto;
+    border-color: var(--color-border);
   }
 
   .header-search input {
@@ -319,8 +408,42 @@ const { showSummaries = true } = Astro.props;
     padding: var(--space-2);
   }
 
+  .icon-only-btn {
+    padding: var(--space-2);
+  }
+
   .theme-icon {
     display: block;
+  }
+
+  /* 導航列動作的結果提示，掛在 header 下緣避免推動版面 */
+  .header-toast {
+    position: absolute;
+    right: var(--space-6);
+    bottom: calc(-1 * var(--space-2));
+    transform: translateY(100%);
+    max-width: min(420px, calc(100vw - var(--space-8)));
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.25));
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .header-toast[hidden] {
+    display: none;
+  }
+
+  .header-toast[data-tone="success"] {
+    color: var(--color-success);
+    border-color: var(--color-success);
+  }
+
+  .header-toast[data-tone="error"] {
+    color: var(--color-error);
+    border-color: var(--color-error);
   }
 
   .connection-badge {

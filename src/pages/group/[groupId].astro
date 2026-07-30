@@ -244,6 +244,10 @@ function buildPageHref(p: number): string {
 
   <script>
     import { initEmailList } from "../../lib/emailListClient";
-    initEmailList(document.getElementById("email-list")!);
+    document.addEventListener("astro:page-load", () => {
+      if (!window.location.pathname.startsWith("/group/")) return;
+      const list = document.getElementById("email-list");
+      if (list) initEmailList(list);
+    });
   </script>
 </SidebarLayout>

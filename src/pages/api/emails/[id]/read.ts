@@ -40,7 +40,11 @@ export const PATCH: APIRoute = async ({ params, request }) => {
   } catch (err) {
     console.error(`Failed to sync read status to Gmail for ${id}:`, err);
     return new Response(
-      JSON.stringify({ status: "recorded", gmailSync: "failed" }),
+      JSON.stringify({
+        status: "recorded",
+        gmailSync: "failed",
+        gmailError: err instanceof Error ? err.message : String(err),
+      }),
       { status: 207, headers: { "Content-Type": "application/json" } },
     );
   }

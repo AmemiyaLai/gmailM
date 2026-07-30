@@ -80,43 +80,48 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
       ))}
     </select>
 
-    <button type="submit" class="btn btn-primary">篩選</button>
   </div>
 </form>
 
 <script>
-  document.querySelectorAll<HTMLFormElement>(".filter-bar").forEach((form) => {
-    function closeAllPopovers(except?: HTMLElement) {
-      form.querySelectorAll<HTMLElement>(".chip-popover").forEach((popover) => {
-        if (popover !== except) popover.classList.remove("chip-popover--open");
-      });
-    }
-
-    form.querySelectorAll<HTMLButtonElement>(".chip-trigger").forEach((trigger) => {
-      trigger.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const name = trigger.dataset.chip;
-        const popover = form.querySelector<HTMLElement>(`[data-popover="${name}"]`);
-        if (!popover) return;
-        const isOpen = popover.classList.contains("chip-popover--open");
-        closeAllPopovers();
-        if (!isOpen) popover.classList.add("chip-popover--open");
-      });
+  document.addEventListener("click", () => {
+    document.querySelectorAll<HTMLElement>(".chip-popover--open").forEach((popover) => {
+      popover.classList.remove("chip-popover--open");
     });
+  });
 
-    form.querySelectorAll(".chip-popover").forEach((popover) => {
-      popover.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("astro:page-load", () => {
+    document.querySelectorAll<HTMLFormElement>(".filter-bar").forEach((form) => {
+      function closeAllPopovers(except?: HTMLElement) {
+        form.querySelectorAll<HTMLElement>(".chip-popover").forEach((popover) => {
+          if (popover !== except) popover.classList.remove("chip-popover--open");
+        });
+      }
+
+      form.querySelectorAll<HTMLButtonElement>(".chip-trigger").forEach((trigger) => {
+        trigger.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const name = trigger.dataset.chip;
+          const popover = form.querySelector<HTMLElement>(`[data-popover="${name}"]`);
+          if (!popover) return;
+          const isOpen = popover.classList.contains("chip-popover--open");
+          closeAllPopovers();
+          if (!isOpen) popover.classList.add("chip-popover--open");
+        });
+      });
+
+      form.querySelectorAll(".chip-popover").forEach((popover) => {
+        popover.addEventListener("click", (e) => e.stopPropagation());
+      });
+
+      const toggle = form.querySelector<HTMLLabelElement>("[data-chip-toggle]");
+      if (toggle) {
+        const toggleInput = toggle.querySelector("input")!;
+        const syncToggle = () => toggle.classList.toggle("chip-toggle--active", toggleInput.checked);
+        toggleInput.addEventListener("change", syncToggle);
+        syncToggle();
+      }
     });
-
-    document.addEventListener("click", () => closeAllPopovers());
-
-    const toggle = form.querySelector<HTMLLabelElement>("[data-chip-toggle]");
-    if (toggle) {
-      const toggleInput = toggle.querySelector("input")!;
-      const syncToggle = () => toggle.classList.toggle("chip-toggle--active", toggleInput.checked);
-      toggleInput.addEventListener("change", syncToggle);
-      syncToggle();
-    }
   });
 </script>
 

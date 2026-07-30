@@ -10,6 +10,7 @@
 # ─── 強制 LF（Shell Scripts / Unix 工具必須使用 LF） ───
 *.sh text eol=lf
 .git_template/hooks/* text eol=lf
+.githooks/* text eol=lf
 
 # ─── 強制 LF（Web 相關檔案，確保跨平台一致） ───
 *.astro text eol=lf

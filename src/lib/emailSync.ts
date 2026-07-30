@@ -5,6 +5,7 @@ import { classifyEmail } from "./classify";
 import { normalizeSenderAddress } from "./senderAddress";
 import { registerFirstSender } from "./firstSender";
 import { refreshSenderTags } from "./senderTagService";
+import { evaluateAndStoreTrust } from "./senderTrustService";
 
 export interface SyncResult {
   imported: number;
@@ -41,6 +42,8 @@ export async function syncEmailsFromGmail(limit: number): Promise<SyncResult> {
           received_at: gmailMsg.receivedAt.toISOString(),
           is_read: gmailMsg.isRead,
           category,
+          authentication_results: gmailMsg.authenticationResults || null,
+          received_spf: gmailMsg.receivedSpf || null,
         } as never,
         { onConflict: "id" },
       );
@@ -61,6 +64,14 @@ export async function syncEmailsFromGmail(limit: number): Promise<SyncResult> {
             .update({ is_first_sender: true } as never)
             .eq("id", gmailMsg.id);
           if (firstFlagError) throw firstFlagError;
+
+          // 標頭已在記憶體，判定不需額外的 Gmail 呼叫；失敗不影響本封信的匯入。
+          await evaluateAndStoreTrust(supabase, {
+            senderAddress,
+            emailId: gmailMsg.id,
+            authenticationResults: gmailMsg.authenticationResults || null,
+            receivedSpf: gmailMsg.receivedSpf || null,
+          }).catch((error) => console.error(`評估 ${senderAddress} 的安全狀態失敗:`, error));
         }
       }
       imported++;

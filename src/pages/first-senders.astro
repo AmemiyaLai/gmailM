@@ -21,27 +21,70 @@ const statusLabel: Record<string, string> = {
   {events.length === 0 ? (
     <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">目前尚無首次寄件者紀錄。</div>
   ) : (
-    <div style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:auto;">
-      <table style="width:100%; min-width:820px; border-collapse:collapse; font-size:var(--font-size-sm);">
+    <div class="first-sender-table-wrap">
+      <table class="first-sender-table">
+        <colgroup>
+          <col class="first-sender-table__sender" />
+          <col class="first-sender-table__address" />
+          <col class="first-sender-table__date" />
+          <col class="first-sender-table__source" />
+          <col class="first-sender-table__discord" />
+          <col class="first-sender-table__error" />
+        </colgroup>
         <thead><tr style="background:var(--color-bg-secondary); border-bottom:1px solid var(--color-border);">
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">寄件者</th>
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">地址</th>
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">首次來信</th>
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">來源</th>
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">Discord</th>
-          <th style="padding:var(--space-3) var(--space-4); text-align:left;">狀態／錯誤</th>
+          <th>寄件者</th>
+          <th>地址</th>
+          <th>首次來信</th>
+          <th>來源</th>
+          <th>Discord 狀態</th>
+          <th>錯誤訊息</th>
         </tr></thead>
         <tbody>{events.map((event) => (
           <tr style="border-bottom:1px solid var(--color-border-subtle);">
-            <td style="padding:var(--space-3) var(--space-4);">{event.sender_display}</td>
-            <td style="padding:var(--space-3) var(--space-4); color:var(--color-text-secondary);">{event.sender_address}</td>
-            <td style="padding:var(--space-3) var(--space-4); white-space:nowrap;"><a href={`/emails/${event.first_email_id}`} style="color:var(--color-primary-hover);">{formatEmailDate(event.first_received_at)}</a></td>
-            <td style="padding:var(--space-3) var(--space-4);">{event.source === "live" ? "即時來信" : "既有基線"}</td>
-            <td style="padding:var(--space-3) var(--space-4);">{statusLabel[event.notification_status]}{event.notification_attempts > 0 ? `（${event.notification_attempts} 次）` : ""}</td>
-            <td style="padding:var(--space-3) var(--space-4); color:var(--color-text-tertiary); max-width:260px;">{event.last_notification_error ?? "—"}</td>
+            <td title={event.sender_display}>{event.sender_display}</td>
+            <td class="first-sender-table__muted" title={event.sender_address}>{event.sender_address}</td>
+            <td><a href={`/emails/${event.first_email_id}`}>{formatEmailDate(event.first_received_at)}</a></td>
+            <td>{event.source === "live" ? "即時來信" : "既有基線"}</td>
+            <td>{statusLabel[event.notification_status]}{event.notification_attempts > 0 ? `（${event.notification_attempts} 次）` : ""}</td>
+            <td class="first-sender-table__muted" title={event.last_notification_error ?? "無錯誤"}>{event.last_notification_error ?? "無錯誤"}</td>
           </tr>
         ))}</tbody>
       </table>
     </div>
   )}
+
+  <style>
+    .first-sender-table-wrap {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      overflow: auto;
+    }
+
+    .first-sender-table {
+      width: 100%;
+      min-width: 960px;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: var(--font-size-sm);
+    }
+
+    .first-sender-table__sender { width: 38%; }
+    .first-sender-table__address { width: 30%; }
+    .first-sender-table__date { width: 8%; }
+    .first-sender-table__source { width: 7%; }
+    .first-sender-table__discord { width: 9%; }
+    .first-sender-table__error { width: 8%; }
+
+    .first-sender-table th,
+    .first-sender-table td {
+      padding: var(--space-3) var(--space-4);
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .first-sender-table a { color: var(--color-primary-hover); }
+    .first-sender-table__muted { color: var(--color-text-secondary); }
+  </style>
 </SidebarLayout>

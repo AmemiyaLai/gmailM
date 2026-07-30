@@ -10,6 +10,7 @@ import {
   getUnreadCount,
   getTodayCount,
   getCategoryCounts,
+  getDashboardStatTrends,
   getImportantEmails,
   listEmails,
   getSenderGroupUnreadCounts,
@@ -39,6 +40,10 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
     getSenderGroupUnreadCounts(SENDER_GROUPS),
     getSenderGroupTopSenders(SENDER_GROUPS, 8),
   ]);
+
+const overviewCategoryCounts = categoryCounts.filter(({ category }) => category === "system" || category === "uncategorized");
+const overviewCategorySnapshot = Object.fromEntries(overviewCategoryCounts.map(({ category, count }) => [category, count]));
+const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUnreadCounts, overviewCategorySnapshot);
 ---
 
 <SidebarLayout title="Gmail 即時監控面板" activeView="home">
@@ -48,14 +53,15 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
       <SummaryPanel summary={summary} />
     </div>
     <div class="summary-split-right">
-      <SenderGroupGrid groups={SENDER_GROUPS} unreadCounts={groupUnreadCounts} topSenders={groupTopSenders} />
+      <SenderGroupGrid groups={SENDER_GROUPS} unreadCounts={groupUnreadCounts} topSenders={groupTopSenders} trends={statTrends.groups} />
     </div>
   </div>
 
   <StatsRow
     unreadCount={unreadCount}
     todayCount={todayCount}
-    categoryCounts={categoryCounts}
+    categoryCounts={overviewCategoryCounts}
+    trends={statTrends}
     importantEmails={importantEmails}
   />
 
@@ -76,7 +82,7 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
     showUnreadToggle={false}
   />
 
-  <div id="email-list" data-unread-only="true" style="display:flex; flex-direction:column; gap:var(--space-3);">
+  <div id="email-list" class="recent-unread-list" data-unread-only="true">
     {recentUnread.map((email) => (
       <EmailCard
         id={email.id}
@@ -112,4 +118,14 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
       if (importantRowEl) initEmailList(importantRowEl);
     });
   </script>
+
+  <style>
+    /* 最近未讀郵件固定為單欄清單，避免卡片隨版面寬度分成多欄。 */
+    .recent-unread-list {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3);
+      width: 100%;
+    }
+  </style>
 </SidebarLayout>

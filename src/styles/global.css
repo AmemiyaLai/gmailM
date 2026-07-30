@@ -452,24 +452,27 @@ pre code {
 }
 
 /* ─────────────────────────────────────────────────────
-   首頁儀錶板：摘要 50/50 垂直分割布局
+   首頁儀錶板：摘要與寄件者群組採單欄列表
    ───────────────────────────────────────────────────── */
 .summary-split {
   display: flex;
+  flex-direction: column;
   gap: var(--space-4);
-  align-items: stretch;      /* 讓兩欄等高 */
+  align-items: stretch;
   margin-bottom: var(--space-6);
 }
 
 .summary-split-left {
-  flex: 1 1 50%;
+  flex: none;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
 .summary-split-right {
-  flex: 1 1 50%;
+  flex: none;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -492,20 +495,9 @@ pre code {
   min-height: 0;
 }
 
-/* RWD：平板以下垂直堆疊 */
-@media (max-width: 1024px) {
-  .summary-split {
-    flex-direction: column;
-  }
-  .summary-split-left,
-  .summary-split-right {
-    flex: none;
-    width: 100%;
-  }
-  /* RWD 時 sgrid 不需要固定高度 */
-  .summary-split-right > * {
-    flex: none;
-  }
+/* 單欄時群組卡不再為了和摘要等高而拉伸。 */
+.summary-split-right > * {
+  flex: none;
 }
 
 /* ─── Toast 提示 ─────────────────────────────────────────────

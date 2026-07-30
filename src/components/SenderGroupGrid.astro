@@ -1,21 +1,24 @@
 ---
 import type { SenderGroup } from "../lib/senderGroups";
 import type { TopSender } from "../lib/emailQueries";
+import type { StatTrend } from "../lib/emailQueries";
 import { extractSenderName } from "../lib/senderUtils";
 
 export interface Props {
   groups: SenderGroup[];
   unreadCounts: Record<string, number>;
   topSenders: Record<string, TopSender[]>;
+  trends: Record<string, StatTrend | null>;
 }
 
-const { groups, unreadCounts, topSenders } = Astro.props;
+const { groups, unreadCounts, topSenders, trends } = Astro.props;
 ---
 
 <div class="sgrid">
   {groups.map((group) => {
     const count = unreadCounts[group.id] ?? 0;
     const tops: TopSender[] = topSenders[group.id] ?? [];
+    const trend = trends[group.id];
     return (
       <div
         class="sgcard"
@@ -38,6 +41,12 @@ const { groups, unreadCounts, topSenders } = Astro.props;
                 style={`background: color-mix(in srgb, var(${group.colorVar}) 18%, transparent); color: var(${group.colorVar});`}
               >
                 {count} 封未讀
+                {trend && (
+                  <span class:list={["sgcard-trend", trend.direction]} title="相較於上一筆統計紀錄">
+                    {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"}
+                    {trend.percentage === null ? " 新增" : ` ${trend.percentage > 0 ? "+" : ""}${trend.percentage}%`}
+                  </span>
+                )}
               </span>
             ) : (
               <span class="sgcard-count sgcard-count--zero">全部已讀</span>
@@ -88,11 +97,10 @@ const { groups, unreadCounts, topSenders } = Astro.props;
 </script>
 
 <style>
-  /* 2×3 grid：直接填滿右半邊 */
+  /* 單欄列表：每個寄件者群組各自佔滿一列。 */
   .sgrid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: repeat(3, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
     flex: 1;
     min-height: 0;
@@ -178,6 +186,15 @@ const { groups, unreadCounts, topSenders } = Astro.props;
     background: var(--color-bg-tertiary);
     color: var(--color-text-tertiary);
   }
+
+  .sgcard-trend {
+    margin-left: 2px;
+    font-size: 0.65rem;
+  }
+
+  .sgcard-trend.up { color: var(--color-success); }
+  .sgcard-trend.down { color: var(--color-error); }
+  .sgcard-trend.flat { color: var(--color-text-tertiary); }
 
   /* ── 寄件人按鈕：依可用寬度自動填滿，最多兩行 ── */
   .sgcard-senders {

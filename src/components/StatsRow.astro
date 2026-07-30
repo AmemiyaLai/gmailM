@@ -2,24 +2,25 @@
 import StatCard from "./StatCard.astro";
 import CategoryCard from "./CategoryCard.astro";
 import ImportantEmailCard from "./ImportantEmailCard.astro";
-import type { EmailPreview } from "../lib/emailQueries";
+import type { DashboardStatTrends, EmailPreview } from "../lib/emailQueries";
 
 export interface Props {
   unreadCount: number;
   todayCount: number;
   categoryCounts: { category: string; count: number }[];
   importantEmails: EmailPreview[];
+  trends: DashboardStatTrends;
 }
 
-const { unreadCount, todayCount, categoryCounts, importantEmails } = Astro.props;
+const { unreadCount, todayCount, categoryCounts, importantEmails, trends } = Astro.props;
 ---
 
 <div style="margin-bottom:var(--space-8);">
   <div class="stats-grid">
-    <StatCard label="未讀郵件" value={unreadCount} href="/unread" accent="primary" />
-    <StatCard label="今日郵件" value={todayCount} accent="info" />
+    <StatCard label="未讀郵件" value={unreadCount} href="/unread" accent="primary" trend={trends.unread} />
+    <StatCard label="今日郵件" value={todayCount} accent="info" trend={trends.today} />
     {categoryCounts.map(({ category, count }) => (
-      <CategoryCard category={category} count={count} />
+      <CategoryCard category={category} count={count} trend={trends.categories[category]} />
     ))}
   </div>
 
@@ -37,9 +38,16 @@ const { unreadCount, todayCount, categoryCounts, importantEmails } = Astro.props
 
 <style>
   .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: var(--space-3);
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+    scrollbar-width: thin;
+  }
+
+  .stats-grid :global(.stat-card) {
+    flex: 1 0 112px;
   }
 
   .important-row {

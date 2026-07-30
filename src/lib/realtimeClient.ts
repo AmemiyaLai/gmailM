@@ -10,23 +10,20 @@ function renderConnectionState() {
   const statusEl = document.getElementById("connection-status");
   if (!statusEl) return;
 
-  if (state === "connected") {
-    statusEl.textContent = "已連線";
-    statusEl.style.background = "var(--color-primary-muted)";
-    statusEl.style.color = "var(--color-primary-hover)";
-    return;
-  }
+  const iconEl = statusEl.querySelector<HTMLElement>("[data-connection-icon]");
+  const labelEl = statusEl.querySelector<HTMLElement>("[data-connection-label]");
+  const connected = state === "connected";
+  const label = connected
+    ? "即時服務已連線"
+    : state === "failed"
+      ? "即時服務連線失敗"
+      : "即時服務連線中";
 
-  if (state === "failed") {
-    statusEl.textContent = "連線失敗";
-    statusEl.style.background = "rgba(239,68,68,0.15)";
-    statusEl.style.color = "var(--color-error)";
-    return;
-  }
-
-  statusEl.textContent = "連線中...";
-  statusEl.style.background = "var(--color-bg-tertiary)";
-  statusEl.style.color = "var(--color-text-tertiary)";
+  statusEl.dataset.state = state;
+  statusEl.dataset.tooltip = label;
+  statusEl.setAttribute("aria-label", label);
+  if (iconEl) iconEl.textContent = connected ? "wifi" : "wifi_off";
+  if (labelEl) labelEl.textContent = label;
 }
 
 export function startRealtimeConnection() {
@@ -159,11 +156,14 @@ export function startRealtimeConnection() {
       console.log(`[Pusher] 同步完成: history_id=${data.last_history_id}, 時間=${data.updated_at}`);
       const statusEl = document.getElementById("connection-status");
       if (statusEl && state === "connected") {
-        statusEl.textContent = "已連線 (已同步)";
+        const label = "即時服務已連線，郵件已同步";
+        statusEl.dataset.tooltip = label;
+        statusEl.setAttribute("aria-label", label);
+        const labelEl = statusEl.querySelector<HTMLElement>("[data-connection-label]");
+        if (labelEl) labelEl.textContent = label;
       }
     },
   );
 }
 
 document.addEventListener("astro:page-load", renderConnectionState);
-

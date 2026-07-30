@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { registerFirstSender, deliverFirstSenderNotification } from "../lib/firstSender";
+import { registerFirstSender, sendFirstSenderDigest } from "../lib/firstSender";
 
 vi.mock("../lib/discord", () => ({
+  sendFirstSenderDigestNotification: vi.fn().mockResolvedValue(undefined),
   sendFirstSenderDiscordNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { sendFirstSenderDiscordNotification } from "../lib/discord";
+import { sendFirstSenderDigestNotification } from "../lib/discord";
 
 const baseEvent = {
   sender_address: "alice@example.com",
@@ -53,115 +54,87 @@ describe("registerFirstSender()", () => {
   });
 });
 
-describe("deliverFirstSenderNotification()", () => {
-  const event = {
-    sender_address: "alice@example.com",
-    first_email_id: "msg-1",
-    sender_display: "Alice <alice@example.com>",
-    first_received_at: "2026-07-26T08:00:00.000Z",
-    source: "live" as const,
-    notification_status: "pending" as const,
-    notification_attempts: 0,
-    last_notification_error: null,
-    notified_at: null,
-  };
+describe("sendFirstSenderDigest()", () => {
+  const rows = [
+    { sender_address: "alice@example.com", sender_display: "Alice <alice@example.com>", first_received_at: "2026-07-26T08:00:00.000Z" },
+    { sender_address: "bob@example.com", sender_display: "Bob <bob@example.com>", first_received_at: "2026-07-26T09:00:00.000Z" },
+  ];
 
-  const email = {
-    threadId: "thread-1",
-    sender: "Alice <alice@example.com>",
-    subject: "Test Subject",
-    snippet: "Test snippet",
-    receivedAt: new Date("2026-07-26T08:00:00Z"),
-    category: "system",
-    labels: [],
-    senderAddress: "alice@example.com",
-  };
+  function makeSupabase(opts: {
+    rows?: unknown[];
+    selectError?: { message: string } | null;
+    updateError?: { message: string } | null;
+  } = {}) {
+    const limit = vi.fn().mockResolvedValue({ data: opts.rows ?? [], error: opts.selectError ?? null });
+    const selectChain = {
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit,
+    };
+    const select = vi.fn().mockReturnValue(selectChain);
+    const updateIn = vi.fn().mockResolvedValue({ error: opts.updateError ?? null });
+    const update = vi.fn().mockReturnValue({ in: updateIn });
+    const supabase = { from: vi.fn().mockReturnValue({ select, update }) };
+    return { supabase, selectChain, update, updateIn };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(sendFirstSenderDiscordNotification).mockResolvedValue(undefined);
+    vi.mocked(sendFirstSenderDigestNotification).mockResolvedValue(undefined);
   });
 
-  it("成功發送通知應回傳 true 並更新狀態為 sent", async () => {
-    const updateMock = vi.fn().mockResolvedValue({ error: null });
-    const eqMock = vi.fn().mockReturnValue({ error: null });
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockImplementation((data: unknown) => ({
-          eq: vi.fn().mockResolvedValue({ error: null }),
-        })),
-      }),
-    };
-
-    const result = await deliverFirstSenderNotification(mockSupabase, event, email);
-    expect(result).toBe(true);
-    expect(sendFirstSenderDiscordNotification).toHaveBeenCalledWith(email);
+  it("沒有待通知事件時不發送、回傳 pending 0", async () => {
+    const { supabase, update } = makeSupabase({ rows: [] });
+    const result = await sendFirstSenderDigest(supabase);
+    expect(result).toEqual({ pending: 0, sent: false });
+    expect(sendFirstSenderDigestNotification).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it("Discord 發送失敗應回傳 false 並更新狀態為 failed", async () => {
-    vi.mocked(sendFirstSenderDiscordNotification).mockRejectedValue(new Error("Discord API error"));
-    const updateMock = vi.fn().mockResolvedValue({ error: null });
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockImplementation(() => ({
-          eq: vi.fn().mockResolvedValue({ error: null }),
-        })),
-      }),
-    };
-
-    const result = await deliverFirstSenderNotification(mockSupabase, event, email);
-    expect(result).toBe(false);
+  it("只彙整 pending 與 failed 的事件", async () => {
+    const { supabase, selectChain } = makeSupabase({ rows });
+    await sendFirstSenderDigest(supabase);
+    expect(selectChain.in).toHaveBeenCalledWith("notification_status", ["pending", "failed"]);
   });
 
-  it("notification_attempts 應正確遞增", async () => {
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockImplementation((data: { notification_attempts?: number }) => ({
-          eq: vi.fn().mockImplementation((_col: string, _val: unknown) => {
-            expect(data.notification_attempts).toBe(4);
-            return Promise.resolve({ error: null });
-          }),
-        })),
-      }),
-    };
+  it("成功發送摘要後應將整批標記為 sent", async () => {
+    const { supabase, update, updateIn } = makeSupabase({ rows });
+    const result = await sendFirstSenderDigest(supabase);
 
-    const result = await deliverFirstSenderNotification(mockSupabase, { ...event, notification_attempts: 3 }, email);
-    expect(result).toBe(true);
+    expect(result).toEqual({ pending: 2, sent: true });
+    expect(sendFirstSenderDigestNotification).toHaveBeenCalledWith([
+      { senderAddress: "alice@example.com", senderDisplay: "Alice <alice@example.com>", firstReceivedAt: "2026-07-26T08:00:00.000Z" },
+      { senderAddress: "bob@example.com", senderDisplay: "Bob <bob@example.com>", firstReceivedAt: "2026-07-26T09:00:00.000Z" },
+    ]);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ notification_status: "sent" }));
+    expect(updateIn).toHaveBeenCalledWith("sender_address", ["alice@example.com", "bob@example.com"]);
   });
 
-  it("Discord 失敗時應記錄錯誤訊息", async () => {
-    vi.mocked(sendFirstSenderDiscordNotification).mockRejectedValue(new Error("Network timeout"));
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockImplementation(() => ({
-          eq: vi.fn().mockImplementation((_col: string, _val: unknown) => {
-            return Promise.resolve({ error: null });
-          }),
-        })),
-      }),
-    };
+  it("Discord 發送失敗時應將整批標記為 failed 並記錄錯誤", async () => {
+    vi.mocked(sendFirstSenderDigestNotification).mockRejectedValue(new Error("Discord webhook failed (500)"));
+    const { supabase, update } = makeSupabase({ rows });
+    const result = await sendFirstSenderDigest(supabase);
 
-    const result = await deliverFirstSenderNotification(mockSupabase, event, email);
-    expect(result).toBe(false);
-    expect(sendFirstSenderDiscordNotification).toHaveBeenCalled();
+    expect(result).toEqual({ pending: 2, sent: false });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      notification_status: "failed",
+      last_notification_error: "Discord webhook failed (500)",
+    }));
   });
 
-  it("當更新 sent 狀態發生 DB 錯誤時應 capture 例外並標記為 failed", async () => {
-    const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockImplementation((data: { notification_status?: string }) => ({
-          eq: vi.fn().mockImplementation((_col: string, _val: unknown) => {
-            if (data.notification_status === "sent") {
-              return Promise.resolve({ error: { message: "db update failed" } });
-            }
-            return Promise.resolve({ error: null });
-          }),
-        })),
-      }),
-    };
+  it("Discord 已送出但回寫 sent 失敗時，不得標記為 failed（避免下次摘要重複通知）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { supabase, update } = makeSupabase({ rows, updateError: { message: "db down" } });
+    const result = await sendFirstSenderDigest(supabase);
 
-    const result = await deliverFirstSenderNotification(mockSupabase, event, email);
-    expect(result).toBe(false);
+    expect(result).toEqual({ pending: 2, sent: true });
+    expect(update).not.toHaveBeenCalledWith(expect.objectContaining({ notification_status: "failed" }));
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("查詢待通知事件失敗時應向外拋出", async () => {
+    const { supabase } = makeSupabase({ selectError: { message: "select failed" } });
+    await expect(sendFirstSenderDigest(supabase)).rejects.toEqual({ message: "select failed" });
   });
 });
-

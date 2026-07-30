@@ -11,6 +11,13 @@ export interface DiscordNotifiableEmail {
   labels: string[];
 }
 
+export interface FirstSenderDigestEntry {
+  senderAddress: string;
+  senderDisplay: string;
+  firstReceivedAt: string;
+}
+
+/** @deprecated 新流程請使用 sendFirstSenderDigestNotification。 */
 export interface FirstSenderDiscordEmail extends DiscordNotifiableEmail {
   senderAddress: string;
 }
@@ -63,6 +70,45 @@ export async function sendDiscordNotification(
   if (!response.ok) throw new Error(`Discord webhook failed (${response.status})`);
 }
 
+/** 摘要最多列出的寄件者數，其餘以「還有 N 位」帶過，細節一律到管理頁面查看 */
+const DIGEST_MAX_LINES = 15;
+
+export async function sendFirstSenderDigestNotification(entries: FirstSenderDigestEntry[]): Promise<void> {
+  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is not configured");
+  if (entries.length === 0) return;
+
+  const siteUrl = import.meta.env.SITE_URL;
+  const lines = entries.slice(0, DIGEST_MAX_LINES).map(
+    (entry) => `• ${truncate(entry.senderDisplay || entry.senderAddress, 60)}\n　└ \`${entry.senderAddress}\``,
+  );
+  const overflow = entries.length - DIGEST_MAX_LINES;
+  if (overflow > 0) lines.push(`…還有 ${overflow} 位，請至管理頁面查看`);
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [{
+        title: "🛡️ 首次寄件者摘要",
+        description: truncate(
+          `這段期間共有 **${entries.length}** 位首次寄件者來信：\n\n${lines.join("\n")}`,
+          4000,
+        ),
+        color: 0xf97316,
+        fields: [
+          { name: "安全建議", value: "首次來信表示需要驗證身分；勿直接開啟可疑連結或附件。" },
+          ...(siteUrl ? [{ name: "管理頁面", value: `[前往 /first-senders](${siteUrl}/first-senders)` }] : []),
+        ],
+        footer: { text: "摘要通知每日 07:00 與 19:00（台北時間）發送" },
+        timestamp: new Date().toISOString(),
+      }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Discord webhook failed (${response.status})`);
+}
+
+/** @deprecated 即時單封通知已停用（改為每日兩次摘要）；保留僅為相容，請勿新增呼叫。 */
 export async function sendFirstSenderDiscordNotification(email: FirstSenderDiscordEmail): Promise<void> {
   const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is not configured");
@@ -208,6 +254,34 @@ export async function sendCleanupReview(payload: CleanupReviewPayload): Promise<
   return body?.id ?? null;
 }
 
+/**
+ * 覆寫按鈕訊息的原始內容（deferred response 的後續動作）。
+ *
+ * 按鈕點擊必須在 3 秒內回應 Discord，但實際處理（最多 25 封 Gmail API 呼叫）可能更久，
+ * 因此 interaction endpoint 會先回 DEFERRED_UPDATE_MESSAGE，處理完再用這支函式回寫訊息。
+ * interaction token 有效期 15 分鐘，且 URL 本身即憑證，不需要 Bot token。
+ */
+export async function editInteractionMessage(
+  applicationId: string,
+  interactionToken: string,
+  embed: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch(
+    `${DISCORD_API}/webhooks/${applicationId}/${interactionToken}/messages/@original`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      // components 清空，避免同一則審核被重複點擊
+      body: JSON.stringify({ embeds: [embed], components: [] }),
+    },
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Discord 回寫互動訊息失敗 (${res.status}) ${detail.slice(0, 200)}`);
+  }
+}
+
 /** 使用者按下按鈕後，用來就地覆寫原訊息的 embed（按鈕會一併移除） */
 export function buildCleanupResultEmbed(
   action: CleanupAction,
@@ -287,4 +361,3 @@ export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<
   });
   if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
 }
-

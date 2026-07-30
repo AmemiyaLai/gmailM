@@ -13,7 +13,10 @@ vi.mock("../lib/gmail", () => ({ trashMessage: mockTrashMessage, markAsRead: moc
 vi.mock("../lib/discord", () => ({ sendCleanupReview: mockSendCleanupReview }));
 vi.mock("../lib/cleanupKeywords", () => ({ findCandidates: mockFindCandidates }));
 
-import { approveReview, dispatchCleanupReview, DISPATCH_COOLDOWN_MS, rejectReview, getReview, listReviews } from "../lib/cleanupReview";
+import {
+  approveReview, dispatchCleanupReview, DISPATCH_COOLDOWN_MS, rejectReview,
+  getReview, listReviews, resumeStuckReviews, STUCK_REVIEW_THRESHOLD_MS,
+} from "../lib/cleanupReview";
 
 interface ChainCall {
   table: string;
@@ -32,7 +35,7 @@ function mockSupabase(results: unknown[]) {
     const result = results[index++] ?? { data: null, error: null };
     const chain: Record<string, ReturnType<typeof vi.fn>> = {};
     const self = () => chain;
-    for (const method of ["select", "insert", "update", "delete", "eq", "in", "order", "limit"]) {
+    for (const method of ["select", "insert", "update", "delete", "eq", "in", "order", "limit", "is", "lt"]) {
       chain[method] = vi.fn(self);
     }
     chain.single = vi.fn().mockResolvedValue(result);
@@ -366,5 +369,100 @@ describe("dispatchCleanupReview() — 冷卻期", () => {
 
     expect(result.cooldown).toBeUndefined();
     expect(mockSendCleanupReview).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resumeStuckReviews()", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTrashMessage.mockResolvedValue(undefined);
+    mockMarkAsRead.mockResolvedValue(undefined);
+  });
+
+  it("沒有中斷的審核單時應回報 0 且不碰 Gmail", async () => {
+    mockSupabase([{ data: [], error: null }]);
+
+    expect(await resumeStuckReviews()).toEqual({ resumed: 0, processed: 0 });
+    expect(mockTrashMessage).not.toHaveBeenCalled();
+    expect(mockMarkAsRead).not.toHaveBeenCalled();
+  });
+
+  it("應只查詢 approved 且 processed_count 為 null、且超過門檻時間的審核單", async () => {
+    const { calls } = mockSupabase([{ data: [], error: null }]);
+
+    await resumeStuckReviews();
+
+    const chain = calls[0].chain;
+    expect(calls[0].table).toBe("cleanup_reviews");
+    expect(chain.eq).toHaveBeenCalledWith("status", "approved");
+    expect(chain.is).toHaveBeenCalledWith("processed_count", null);
+
+    // 門檻時間應為「現在減去 STUCK_REVIEW_THRESHOLD_MS」
+    const [column, cutoff] = chain.lt.mock.calls[0] as [string, string];
+    expect(column).toBe("decided_at");
+    const drift = Math.abs(Date.now() - STUCK_REVIEW_THRESHOLD_MS - new Date(cutoff).getTime());
+    expect(drift).toBeLessThan(5_000);
+  });
+
+  it("應補做中斷的 trash 審核單並回寫處理數量", async () => {
+    const { calls } = mockSupabase([
+      { data: [pendingReview({ status: "approved" })], error: null }, // 查詢卡住的審核單
+      { data: null, error: null }, // emails delete
+      { data: null, error: null }, // 回寫 processed_count
+    ]);
+
+    const result = await resumeStuckReviews();
+
+    expect(result).toEqual({ resumed: 1, processed: 2 });
+    expect(mockTrashMessage).toHaveBeenCalledTimes(2);
+    expect(calls[1].chain.delete).toHaveBeenCalled();
+    const payload = calls[2].chain.update.mock.calls[0][0] as { processed_count: number };
+    expect(payload.processed_count).toBe(2);
+  });
+
+  it("應依 action 補做 read 審核單（標記已讀而非刪除）", async () => {
+    const { calls } = mockSupabase([
+      { data: [pendingReview({ status: "approved", action: "read" })], error: null },
+      { data: null, error: null },
+      { data: null, error: null },
+    ]);
+
+    const result = await resumeStuckReviews();
+
+    expect(result).toEqual({ resumed: 1, processed: 2 });
+    expect(mockMarkAsRead).toHaveBeenCalledTimes(2);
+    expect(mockTrashMessage).not.toHaveBeenCalled();
+    expect(calls[1].chain.update).toHaveBeenCalledWith({ is_read: true });
+  });
+
+  it("單筆補做失敗不應中斷其他筆", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // 第一筆的 Gmail 呼叫全部失敗，第二筆成功
+    mockTrashMessage
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValue(undefined);
+
+    mockSupabase([
+      {
+        data: [
+          pendingReview({ id: "r1", status: "approved" }),
+          pendingReview({ id: "r2", status: "approved", email_ids: ["m3"] }),
+        ],
+        error: null,
+      },
+      { data: null, error: null }, // r1 回寫（0 封成功，不會 delete）
+      { data: null, error: null }, // r2 emails delete
+      { data: null, error: null }, // r2 回寫
+    ]);
+
+    const result = await resumeStuckReviews();
+
+    expect(result.resumed).toBe(2);
+    expect(result.processed).toBe(1); // 只有 r2 的那一封成功
+    consoleSpy.mockRestore();
+    consoleWarn.mockRestore();
   });
 });

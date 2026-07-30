@@ -65,22 +65,19 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
     importantEmails={importantEmails}
   />
 
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3);">
-    <h2 style="font-size:var(--font-size-md);">最近未讀郵件</h2>
-    <a href={buildFilterHref("/unread", filters)} style="font-size:var(--font-size-sm); color:var(--color-primary-hover);">
-      查看全部未讀 →
-    </a>
+  <div class="recent-unread-toolbar">
+    <h2>最近未讀郵件</h2>
+    <FilterBar
+      action="/"
+      category={filters.category}
+      sender={filters.sender}
+      recipient={filters.recipient}
+      from={filters.from}
+      to={filters.to}
+      showUnreadToggle={false}
+    />
+    <a href={buildFilterHref("/unread", filters)}>查看全部未讀 →</a>
   </div>
-
-  <FilterBar
-    action="/"
-    category={filters.category}
-    sender={filters.sender}
-    recipient={filters.recipient}
-    from={filters.from}
-    to={filters.to}
-    showUnreadToggle={false}
-  />
 
   <div id="email-list" class="recent-unread-list" data-unread-only="true">
     {recentUnread.map((email) => (
@@ -126,6 +123,43 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
       grid-template-columns: minmax(0, 1fr);
       gap: var(--space-3);
       width: 100%;
+    }
+
+    .recent-unread-toolbar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
+    }
+
+    .recent-unread-toolbar h2 {
+      flex-shrink: 0;
+      margin: 0;
+      font-size: var(--font-size-md);
+      white-space: nowrap;
+    }
+
+    .recent-unread-toolbar :global(.filter-bar) {
+      flex: 0 1 auto;
+      margin: 0;
+    }
+
+    .recent-unread-toolbar a {
+      margin-left: auto;
+      font-size: var(--font-size-sm);
+      color: var(--color-primary-hover);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 760px) {
+      .recent-unread-toolbar {
+        flex-wrap: wrap;
+      }
+
+      .recent-unread-toolbar :global(.filter-bar) {
+        order: 3;
+        flex-basis: 100%;
+      }
     }
   </style>
 </SidebarLayout>

@@ -25,6 +25,11 @@ vi.mock("../lib/gmail", () => ({
   getMessage: (...args: unknown[]) => mockGetMessage(...args),
 }));
 
+const mockEvaluateAndStoreTrust = vi.fn();
+vi.mock("../lib/senderTrustService", () => ({
+  evaluateAndStoreTrust: (...args: unknown[]) => mockEvaluateAndStoreTrust(...args),
+}));
+
 import { syncEmailsFromGmail } from "../lib/emailSync";
 
 describe("syncEmailsFromGmail()", () => {
@@ -37,6 +42,60 @@ describe("syncEmailsFromGmail()", () => {
       }),
     });
     mockTrigger.mockResolvedValue({});
+    mockEvaluateAndStoreTrust.mockResolvedValue({ level: "unverified" });
+  });
+
+  it("upsert payload 應包含驗證標頭欄位", async () => {
+    mockListMessages.mockResolvedValue(["msg-1"]);
+    mockGetMessage.mockResolvedValue({
+      id: "msg-1",
+      threadId: "thread-1",
+      sender: "a@example.com",
+      recipient: "me@example.com",
+      subject: "Test",
+      snippet: "snip",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: [],
+      receivedAt: new Date("2026-07-26T08:00:00Z"),
+      isRead: false,
+      authenticationResults: "mx.google.com; spf=pass",
+      receivedSpf: "pass",
+    });
+
+    await syncEmailsFromGmail(1);
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authentication_results: "mx.google.com; spf=pass",
+        received_spf: "pass",
+      }),
+      { onConflict: "id" },
+    );
+  });
+
+  it("缺少驗證標頭時 upsert payload 應寫入 null", async () => {
+    mockListMessages.mockResolvedValue(["msg-1"]);
+    mockGetMessage.mockResolvedValue({
+      id: "msg-1",
+      threadId: "thread-1",
+      sender: "a@example.com",
+      recipient: "me@example.com",
+      subject: "Test",
+      snippet: "snip",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: [],
+      receivedAt: new Date("2026-07-26T08:00:00Z"),
+      isRead: false,
+      authenticationResults: "",
+      receivedSpf: "",
+    });
+
+    await syncEmailsFromGmail(1);
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ authentication_results: null, received_spf: null }),
+      { onConflict: "id" },
+    );
   });
 
   it("同步成功時應回傳正確的 imported 數量", async () => {
@@ -223,6 +282,107 @@ describe("syncEmailsFromGmail()", () => {
     const result = await syncEmailsFromGmail(1);
     expect(result.failed).toBe(1);
     expect(result.imported).toBe(0);
+  });
+
+  it("baseline 首次寄件者應以記憶體中的標頭評估安全狀態", async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === "emails") {
+        return {
+          upsert: mockUpsert,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        };
+      }
+      return {
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { sender_address: "new@example.com" },
+              error: null,
+            }),
+          }),
+        }),
+      };
+    });
+
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from: mockFrom } as never);
+
+    mockListMessages.mockResolvedValue(["msg-new"]);
+    mockGetMessage.mockResolvedValue({
+      id: "msg-new",
+      threadId: "t1",
+      sender: "New Sender <new@example.com>",
+      recipient: "me@example.com",
+      subject: "Welcome",
+      snippet: "hi",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: [],
+      receivedAt: new Date(),
+      isRead: false,
+      authenticationResults: "mx.google.com; spf=pass",
+      receivedSpf: "",
+    });
+
+    await syncEmailsFromGmail(1);
+
+    expect(mockEvaluateAndStoreTrust).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        senderAddress: "new@example.com",
+        emailId: "msg-new",
+        authenticationResults: "mx.google.com; spf=pass",
+        receivedSpf: null,
+      },
+    );
+  });
+
+  it("安全狀態評估失敗不應影響匯入結果", async () => {
+    mockEvaluateAndStoreTrust.mockRejectedValue(new Error("boom"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === "emails") {
+        return {
+          upsert: mockUpsert,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        };
+      }
+      return {
+        insert: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({
+              data: { sender_address: "new@example.com" },
+              error: null,
+            }),
+          }),
+        }),
+      };
+    });
+
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from: mockFrom } as never);
+
+    mockListMessages.mockResolvedValue(["msg-new"]);
+    mockGetMessage.mockResolvedValue({
+      id: "msg-new",
+      threadId: "t1",
+      sender: "New Sender <new@example.com>",
+      recipient: "me@example.com",
+      subject: "Welcome",
+      snippet: "hi",
+      bodyHtml: "",
+      bodyPlain: "",
+      labels: [],
+      receivedAt: new Date(),
+      isRead: false,
+      authenticationResults: "",
+      receivedSpf: "",
+    });
+
+    const result = await syncEmailsFromGmail(1);
+    expect(result.imported).toBe(1);
+    expect(result.failed).toBe(0);
+    errorSpy.mockRestore();
   });
 });
 

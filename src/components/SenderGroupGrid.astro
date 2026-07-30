@@ -97,10 +97,11 @@ const { groups, unreadCounts, topSenders, trends } = Astro.props;
 </script>
 
 <style>
-  /* 單欄列表：每個寄件者群組各自佔滿一列。 */
+  /* 2×3 grid：直接填滿右半邊 */
   .sgrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, 1fr);
     gap: var(--space-3);
     flex: 1;
     min-height: 0;

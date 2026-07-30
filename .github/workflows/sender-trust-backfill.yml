@@ -1,0 +1,37 @@
+name: Sender Trust Backfill
+
+on:
+  schedule:
+    - cron: "35 * * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger-sender-trust-backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sender-trust-backfill API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          # 每批 50 筆，最多 20 批（單次可吃掉 1000 筆歷史）；remaining 歸零即提前結束。
+          for i in $(seq 1 20); do
+            code=$(curl -sS --max-time 300 -o response.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              "https://gmailm.autodesignlab.org/api/gmail/sender-trust-backfill?limit=50")
+            echo "batch ${i} HTTP_STATUS: ${code}"
+            cat response.json || true
+            echo
+            # 明確拒絕 3xx：Cloudflare Access 的登入導向會回 302，而 curl -f 只對 >=400 失敗
+            if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
+              echo "::error::sender-trust-backfill 回傳非 2xx（${code}）"
+              exit 1
+            fi
+
+            remaining=$(jq -r '.remaining // 0' response.json)
+            scanned=$(jq -r '.scanned // 0' response.json)
+            if [ "${remaining}" -eq 0 ] || [ "${scanned}" -eq 0 ]; then
+              echo "回填完成，剩餘 ${remaining} 筆。"
+              break
+            fi
+          done

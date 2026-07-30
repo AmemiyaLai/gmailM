@@ -4,6 +4,7 @@ import type { SenderGroup } from "./senderGroups";
 import type { AnalyticsEmail, AnalyticsRange } from "./emailAnalytics";
 import { rangeToQueryBounds } from "./emailAnalytics";
 import { endOfTaipeiDate, startOfTaipeiDate } from "./emailFilters";
+import type { AuthResult, TrustEvidence, TrustLevel } from "./senderTrust";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -43,16 +44,52 @@ export interface FirstSenderEventRow {
   notification_attempts: number;
   last_notification_error: string | null;
   notified_at: string | null;
+  /** null 代表尚未評估安全狀態，見 supabase/migrations/0009_sender_trust.sql */
+  trust_level: TrustLevel | null;
+  spf_result: AuthResult | null;
+  dkim_result: AuthResult | null;
+  dmarc_result: AuthResult | null;
+  auth_domain: string | null;
+  trust_evidence: TrustEvidence[] | null;
+  trust_evaluated_at: string | null;
 }
+
+const FIRST_SENDER_BASE_COLUMNS =
+  "sender_address, first_email_id, sender_display, first_received_at, source, notification_status, notification_attempts, last_notification_error, notified_at";
+const FIRST_SENDER_TRUST_COLUMNS =
+  "trust_level, spf_result, dkim_result, dmarc_result, auth_domain, trust_evidence, trust_evaluated_at";
 
 export async function getFirstSenderEvents(limit = 100): Promise<FirstSenderEventRow[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("first_sender_events" as never)
-    .select("sender_address, first_email_id, sender_display, first_received_at, source, notification_status, notification_attempts, last_notification_error, notified_at")
+    .select(`${FIRST_SENDER_BASE_COLUMNS}, ${FIRST_SENDER_TRUST_COLUMNS}`)
     .order("first_received_at", { ascending: false })
     .limit(limit);
-  return (data ?? []) as FirstSenderEventRow[];
+  if (!error) return (data ?? []) as FirstSenderEventRow[];
+
+  // trust 欄位來自 0009_sender_trust.sql；migration 尚未套用時完整查詢會失敗。
+  // 安全紀錄頁面是永久清單，不可因新欄位缺失而整頁變空，故退回基本欄位並記錄錯誤。
+  console.error("getFirstSenderEvents 完整查詢失敗，退回基本欄位：", error.message);
+  const fallback = await supabase
+    .from("first_sender_events" as never)
+    .select(FIRST_SENDER_BASE_COLUMNS)
+    .order("first_received_at", { ascending: false })
+    .limit(limit);
+  if (fallback.error) {
+    console.error("getFirstSenderEvents 基本欄位查詢也失敗：", fallback.error.message);
+    return [];
+  }
+  return ((fallback.data ?? []) as Omit<FirstSenderEventRow, "trust_level" | "spf_result" | "dkim_result" | "dmarc_result" | "auth_domain" | "trust_evidence" | "trust_evaluated_at">[]).map((row) => ({
+    ...row,
+    trust_level: null,
+    spf_result: null,
+    dkim_result: null,
+    dmarc_result: null,
+    auth_domain: null,
+    trust_evidence: null,
+    trust_evaluated_at: null,
+  }));
 }
 
 interface EmailPreviewRow {

@@ -2,6 +2,7 @@
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import { formatEmailDate } from "../lib/formatEmailDate";
 import { getFirstSenderEvents } from "../lib/emailQueries";
+import { TRUST_LEVEL_LABELS } from "../lib/senderTrust";
 
 const events = await getFirstSenderEvents();
 const statusLabel: Record<string, string> = {
@@ -16,6 +17,8 @@ const statusLabel: Record<string, string> = {
   <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-2);">首次寄件者安全紀錄</h1>
   <p style="color:var(--color-text-secondary); margin:0 0 var(--space-6);">
     首次來信表示需要驗證身分，並不等同釣魚郵件；請勿直接開啟可疑連結或附件。
+    安全狀態綜合 Gmail SPF／DKIM／DMARC 驗證標頭、Google Safe Browsing 網域信譽與本地知名網域白名單三項訊號判定；
+    點開「依據」可檢視各訊號的原始來源。
   </p>
 
   {events.length === 0 ? (
@@ -26,6 +29,7 @@ const statusLabel: Record<string, string> = {
         <colgroup>
           <col class="first-sender-table__sender" />
           <col class="first-sender-table__address" />
+          <col class="first-sender-table__trust" />
           <col class="first-sender-table__date" />
           <col class="first-sender-table__source" />
           <col class="first-sender-table__discord" />
@@ -34,6 +38,7 @@ const statusLabel: Record<string, string> = {
         <thead><tr style="background:var(--color-bg-secondary); border-bottom:1px solid var(--color-border);">
           <th>寄件者</th>
           <th>地址</th>
+          <th>安全狀態</th>
           <th>首次來信</th>
           <th>來源</th>
           <th>Discord 狀態</th>
@@ -43,6 +48,35 @@ const statusLabel: Record<string, string> = {
           <tr style="border-bottom:1px solid var(--color-border-subtle);">
             <td title={event.sender_display}>{event.sender_display}</td>
             <td class="first-sender-table__muted" title={event.sender_address}>{event.sender_address}</td>
+            <td class="first-sender-table__trust-cell">
+              {event.trust_level === null ? (
+                <span class="trust-badge" data-level="pending">尚未評估</span>
+              ) : (
+                <details class="trust-details">
+                  <summary>
+                    <span class="trust-badge" data-level={event.trust_level}>{TRUST_LEVEL_LABELS[event.trust_level]}</span>
+                    <span class="trust-details__hint">依據</span>
+                  </summary>
+                  <ul class="trust-evidence">
+                    {(event.trust_evidence ?? []).map((item) => (
+                      <li>
+                        {item.href ? (
+                          <a
+                            href={item.href}
+                            target={item.external ? "_blank" : undefined}
+                            rel={item.external ? "noopener noreferrer" : undefined}
+                          >{item.label}</a>
+                        ) : (
+                          <span>{item.label}</span>
+                        )}
+                        <span class="first-sender-table__muted">：{item.detail}</span>
+                        {item.raw && <code class="trust-evidence__raw">{item.raw}</code>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </td>
             <td><a href={`/emails/${event.first_email_id}`}>{formatEmailDate(event.first_received_at)}</a></td>
             <td>{event.source === "live" ? "即時來信" : "既有基線"}</td>
             <td>{statusLabel[event.notification_status]}{event.notification_attempts > 0 ? `（${event.notification_attempts} 次）` : ""}</td>
@@ -62,14 +96,15 @@ const statusLabel: Record<string, string> = {
 
     .first-sender-table {
       width: 100%;
-      min-width: 960px;
+      min-width: 1120px;
       border-collapse: collapse;
       table-layout: fixed;
       font-size: var(--font-size-sm);
     }
 
-    .first-sender-table__sender { width: 38%; }
-    .first-sender-table__address { width: 30%; }
+    .first-sender-table__sender { width: 24%; }
+    .first-sender-table__address { width: 22%; }
+    .first-sender-table__trust { width: 22%; }
     .first-sender-table__date { width: 8%; }
     .first-sender-table__source { width: 7%; }
     .first-sender-table__discord { width: 9%; }
@@ -86,5 +121,61 @@ const statusLabel: Record<string, string> = {
 
     .first-sender-table a { color: var(--color-primary-hover); }
     .first-sender-table__muted { color: var(--color-text-secondary); }
+
+    /* 展開的證據內容需覆寫表格預設的 nowrap／hidden，否則會被壓垮 */
+    .first-sender-table__trust-cell {
+      white-space: normal;
+      overflow: visible;
+    }
+
+    .trust-details > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .trust-details > summary::-webkit-details-marker { display: none; }
+
+    .trust-details__hint {
+      font-size: var(--font-size-xs);
+      color: var(--color-text-tertiary);
+      text-decoration: underline dotted;
+    }
+
+    .trust-badge {
+      display: inline-block;
+      padding: 2px var(--space-2);
+      border-radius: var(--radius-sm);
+      border: 1px solid currentColor;
+      font-size: var(--font-size-xs);
+      white-space: nowrap;
+    }
+
+    .trust-badge[data-level="trusted"] { color: var(--color-success); }
+    .trust-badge[data-level="likely"] { color: var(--color-info); }
+    .trust-badge[data-level="unverified"] { color: var(--color-text-tertiary); }
+    .trust-badge[data-level="suspicious"] { color: var(--color-warning); }
+    .trust-badge[data-level="dangerous"] { color: var(--color-error); }
+    .trust-badge[data-level="pending"] {
+      color: var(--color-text-tertiary);
+      border-style: dashed;
+    }
+
+    .trust-evidence {
+      margin: var(--space-2) 0 0;
+      padding-left: var(--space-4);
+      font-size: var(--font-size-xs);
+      line-height: 1.6;
+    }
+
+    .trust-evidence__raw {
+      display: block;
+      margin-top: 2px;
+      color: var(--color-text-tertiary);
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
   </style>
 </SidebarLayout>

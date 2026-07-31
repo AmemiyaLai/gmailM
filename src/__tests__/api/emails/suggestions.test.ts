@@ -7,13 +7,19 @@ vi.mock("../../../lib/supabase", () => ({
 import { getSupabase } from "../../../lib/supabase";
 import { GET } from "../../../pages/api/emails/suggestions";
 
-function setupSupabase(result: { data: unknown[] | null; error: unknown }) {
+function setupSupabase(
+  ...results: Array<{ data: unknown[] | null; error: unknown }>
+) {
   const chain = {
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     ilike: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockResolvedValue(result),
+    or: vi.fn().mockReturnThis(),
+    limit: vi.fn(),
   };
+  for (const result of results) {
+    chain.limit.mockResolvedValueOnce(result);
+  }
   const from = vi.fn(() => chain);
   vi.mocked(getSupabase).mockReturnValue({ from } as never);
   return { chain, from };
@@ -78,5 +84,31 @@ describe("GET /api/emails/suggestions", () => {
 
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({ error: "搜尋候選郵件失敗" });
+  });
+
+  it("search_text migration 未套用時應退回既有欄位搜尋", async () => {
+    const emails = [{ id: "m1", sender: "蝦皮購物", subject: "撥款", snippet: "" }];
+    const { chain, from } = setupSupabase(
+      {
+        data: null,
+        error: {
+          code: "42703",
+          message: "column emails.search_text does not exist",
+        },
+      },
+      { data: emails, error: null },
+    );
+
+    const res = await GET({
+      url: new URL("http://localhost/api/emails/suggestions?q=%E8%9D%A6%E7%9A%AE+%E6%92%A5%E6%AC%BE"),
+    } as never);
+
+    expect(from).toHaveBeenCalledTimes(2);
+    expect(chain.or.mock.calls).toEqual([
+      ['sender.ilike."%蝦皮%",subject.ilike."%蝦皮%",snippet.ilike."%蝦皮%"'],
+      ['sender.ilike."%撥款%",subject.ilike."%撥款%",snippet.ilike."%撥款%"'],
+    ]);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ emails });
   });
 });

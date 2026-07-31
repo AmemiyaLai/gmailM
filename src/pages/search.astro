@@ -3,7 +3,11 @@ import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
 import EmailListShell from "../components/EmailListShell.astro";
-import { buildEmailSearchPatterns } from "../lib/emailSearch";
+import {
+  buildEmailSearchFallbackFilters,
+  buildEmailSearchPatterns,
+  isMissingEmailSearchTextColumn,
+} from "../lib/emailSearch";
 import { getSupabase } from "../lib/supabase";
 import { endOfTaipeiDate, parseEmailFilterParams, startOfTaipeiDate } from "../lib/emailFilters";
 import { buildSenderJumpItems } from "../lib/emailDisplayGroups";
@@ -23,37 +27,51 @@ interface EmailResult {
 const filters = parseEmailFilterParams(Astro.url);
 
 const supabase = getSupabase();
-let query = supabase
-  .from("emails" as never)
-  .select("id, sender, subject, snippet, received_at, is_read, category, is_important, labels")
-  .order("received_at", { ascending: false })
-  .limit(50);
+const buildQuery = (useSearchText: boolean) => {
+  let query = supabase
+    .from("emails" as never)
+    .select("id, sender, subject, snippet, received_at, is_read, category, is_important, labels")
+    .order("received_at", { ascending: false })
+    .limit(50);
 
-if (filters.q) {
-  for (const pattern of buildEmailSearchPatterns(filters.q)) {
-    query = query.ilike("search_text", pattern);
+  if (filters.q) {
+    if (useSearchText) {
+      for (const pattern of buildEmailSearchPatterns(filters.q)) {
+        query = query.ilike("search_text", pattern);
+      }
+    } else {
+      for (const filter of buildEmailSearchFallbackFilters(filters.q)) {
+        query = query.or(filter);
+      }
+    }
   }
-}
-if (filters.category) {
-  query = query.eq("category", filters.category);
-}
-if (filters.from) {
-  query = query.gte("received_at", startOfTaipeiDate(filters.from));
-}
-if (filters.to) {
-  query = query.lte("received_at", endOfTaipeiDate(filters.to));
-}
-if (filters.sender) {
-  query = query.ilike("sender", `%${filters.sender}%`);
-}
-if (filters.recipient) {
-  query = query.ilike("recipient", `%${filters.recipient}%`);
-}
-if (filters.unread) {
-  query = query.eq("is_read", false);
-}
+  if (filters.category) {
+    query = query.eq("category", filters.category);
+  }
+  if (filters.from) {
+    query = query.gte("received_at", startOfTaipeiDate(filters.from));
+  }
+  if (filters.to) {
+    query = query.lte("received_at", endOfTaipeiDate(filters.to));
+  }
+  if (filters.sender) {
+    query = query.ilike("sender", `%${filters.sender}%`);
+  }
+  if (filters.recipient) {
+    query = query.ilike("recipient", `%${filters.recipient}%`);
+  }
+  if (filters.unread) {
+    query = query.eq("is_read", false);
+  }
 
-const { data, error } = await query;
+  return query;
+};
+
+let result = await buildQuery(true);
+if (isMissingEmailSearchTextColumn(result.error)) {
+  result = await buildQuery(false);
+}
+const { data, error } = result;
 const emails = (data ?? []) as EmailResult[];
 const senderJumpItems = buildSenderJumpItems(emails);
 const senderJumpIdBySender = new Map(senderJumpItems.map((item) => [item.sender, item.id]));

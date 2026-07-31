@@ -1,5 +1,9 @@
 import type { APIRoute } from "astro";
-import { buildEmailSearchPatterns } from "../../../lib/emailSearch";
+import {
+  buildEmailSearchFallbackFilters,
+  buildEmailSearchPatterns,
+  isMissingEmailSearchTextColumn,
+} from "../../../lib/emailSearch";
 import { getSupabase } from "../../../lib/supabase";
 
 interface SuggestedEmail {
@@ -16,16 +20,32 @@ export const GET: APIRoute = async ({ url }) => {
     return Response.json({ emails: [] });
   }
 
-  let search = getSupabase()
-    .from("emails" as never)
-    .select("id, sender, subject, snippet")
-    .order("received_at", { ascending: false });
+  const supabase = getSupabase();
+  const buildSearch = (useSearchText: boolean) => {
+    let search = supabase
+      .from("emails" as never)
+      .select("id, sender, subject, snippet")
+      .order("received_at", { ascending: false });
 
-  for (const pattern of buildEmailSearchPatterns(query)) {
-    search = search.ilike("search_text", pattern);
+    if (useSearchText) {
+      for (const pattern of buildEmailSearchPatterns(query)) {
+        search = search.ilike("search_text", pattern);
+      }
+    } else {
+      for (const filter of buildEmailSearchFallbackFilters(query)) {
+        search = search.or(filter);
+      }
+    }
+
+    return search.limit(6);
+  };
+
+  let result = await buildSearch(true);
+  if (isMissingEmailSearchTextColumn(result.error)) {
+    result = await buildSearch(false);
   }
 
-  const { data, error } = await search.limit(6);
+  const { data, error } = result;
 
   if (error) {
     return Response.json({ error: "搜尋候選郵件失敗" }, { status: 500 });

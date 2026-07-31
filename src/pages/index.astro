@@ -7,7 +7,7 @@ import StatsRow from "../components/StatsRow.astro";
 import SenderGroupGrid from "../components/SenderGroupGrid.astro";
 import {
   getLatestSummary,
-  getUnreadCount,
+  getGmailUnreadStatus,
   getTodayCount,
   getCategoryCounts,
   getDashboardStatTrends,
@@ -16,15 +16,16 @@ import {
   getSenderGroupUnreadCounts,
   getSenderGroupTopSenders,
 } from "../lib/emailQueries";
+import { getPendingReviewCount } from "../lib/cleanupReview";
 import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
 import { SENDER_GROUPS } from "../lib/senderGroups";
 
 const filters = parseEmailFilterParams(Astro.url);
 
-const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emails: recentUnread }, groupUnreadCounts, groupTopSenders] =
+const [summary, unreadStatus, todayCount, categoryCounts, importantEmails, { emails: recentUnread }, groupUnreadCounts, groupTopSenders, pendingReviews] =
   await Promise.all([
     getLatestSummary(),
-    getUnreadCount(),
+    getGmailUnreadStatus(),
     getTodayCount(),
     getCategoryCounts(),
     getImportantEmails(5),
@@ -39,8 +40,15 @@ const [summary, unreadCount, todayCount, categoryCounts, importantEmails, { emai
     }),
     getSenderGroupUnreadCounts(SENDER_GROUPS),
     getSenderGroupTopSenders(SENDER_GROUPS, 8),
+    // 清理審核是附加功能，查詢失敗（例如 migration 未套用）不該讓整個儀表板掛掉；
+    // 明確的錯誤提示留給 /cleanup 與 /reviews 頁面呈現。
+    getPendingReviewCount().catch((err) => {
+      console.error("首頁待審核統計查詢失敗:", err);
+      return { reviews: 0, emails: 0 };
+    }),
   ]);
 
+const unreadCount = unreadStatus.count;
 const overviewCategoryCounts = categoryCounts.filter(({ category }) => category === "system" || category === "uncategorized");
 const overviewCategorySnapshot = Object.fromEntries(overviewCategoryCounts.map(({ category, count }) => [category, count]));
 const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUnreadCounts, overviewCategorySnapshot);
@@ -59,14 +67,16 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
 
   <StatsRow
     unreadCount={unreadCount}
+    unreadStatus={unreadStatus}
     todayCount={todayCount}
+    pendingReviewEmails={pendingReviews.emails}
     categoryCounts={overviewCategoryCounts}
     trends={statTrends}
     importantEmails={importantEmails}
   />
 
   <div class="recent-unread-toolbar">
-    <h2>最近未讀郵件</h2>
+    <h2>最近未讀討論串</h2>
     <FilterBar
       action="/"
       category={filters.category}
@@ -76,10 +86,10 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
       to={filters.to}
       showUnreadToggle={false}
     />
-    <a href={buildFilterHref("/unread", filters)}>查看全部未讀 →</a>
+    <a href={buildFilterHref("/unread", filters)}>查看全部未讀討論串 →</a>
   </div>
 
-  <div id="email-list" class="recent-unread-list" data-unread-only="true">
+  <div id="email-list" class="recent-unread-list email-list-scroll" data-unread-only="true">
     {recentUnread.map((email) => (
       <EmailCard
         id={email.id}
@@ -98,7 +108,7 @@ const statTrends = await getDashboardStatTrends(unreadCount, todayCount, groupUn
 
     {recentUnread.length === 0 && (
       <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
-        目前沒有未讀郵件。
+        目前沒有未讀討論串。
       </div>
     )}
   </div>

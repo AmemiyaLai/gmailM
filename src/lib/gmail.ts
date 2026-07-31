@@ -54,6 +54,20 @@ function joinHeaders(headers: GmailHeader[], name: string): string {
 
 export interface HistoryChange {
   messageId: string;
+  kind: "added" | "stateChanged" | "deleted";
+  labelIds: string[];
+}
+
+export interface GmailMessageState {
+  id: string;
+  threadId: string;
+  labels: string[];
+  isRead: boolean;
+}
+
+export interface GmailUnreadInboxMessage {
+  id: string;
+  threadId: string;
 }
 
 export async function listHistory(
@@ -69,7 +83,6 @@ export async function listHistory(
       userId: "me",
       startHistoryId,
       pageToken,
-      historyTypes: ["messageAdded"],
     });
 
     historyId = res.data.historyId ?? startHistoryId;
@@ -77,7 +90,30 @@ export async function listHistory(
     for (const record of res.data.history ?? []) {
       for (const msg of record.messagesAdded ?? []) {
         if (msg.message?.id) {
-          messages.push({ messageId: msg.message.id });
+          messages.push({ messageId: msg.message.id, kind: "added", labelIds: msg.message.labelIds ?? [] });
+        }
+      }
+      for (const change of record.labelsAdded ?? []) {
+        if (change.message?.id) {
+          messages.push({
+            messageId: change.message.id,
+            kind: "stateChanged",
+            labelIds: change.labelIds ?? [],
+          });
+        }
+      }
+      for (const change of record.labelsRemoved ?? []) {
+        if (change.message?.id) {
+          messages.push({
+            messageId: change.message.id,
+            kind: "stateChanged",
+            labelIds: change.labelIds ?? [],
+          });
+        }
+      }
+      for (const msg of record.messagesDeleted ?? []) {
+        if (msg.message?.id) {
+          messages.push({ messageId: msg.message.id, kind: "deleted", labelIds: [] });
         }
       }
     }
@@ -85,7 +121,68 @@ export async function listHistory(
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
 
-  return { historyId, messages };
+  const priority = { stateChanged: 1, added: 2, deleted: 3 } as const;
+  const deduplicated = new Map<string, HistoryChange>();
+  for (const change of messages) {
+    const previous = deduplicated.get(change.messageId);
+    if (!previous || priority[change.kind] >= priority[previous.kind]) {
+      deduplicated.set(change.messageId, change);
+    }
+  }
+
+  return { historyId, messages: Array.from(deduplicated.values()) };
+}
+
+export async function getMessageState(messageId: string): Promise<GmailMessageState> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "metadata",
+    metadataHeaders: [],
+  });
+  const labels = res.data.labelIds ?? [];
+  return {
+    id: res.data.id ?? messageId,
+    threadId: res.data.threadId ?? "",
+    labels,
+    isRead: !labels.includes("UNREAD"),
+  };
+}
+
+export async function getInboxUnreadCount(): Promise<number> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.labels.get({ userId: "me", id: "INBOX" });
+  return res.data.threadsUnread ?? 0;
+}
+
+export async function listUnreadInboxMessages(): Promise<GmailUnreadInboxMessage[]> {
+  const gmail = getGmailClient();
+  const messages: GmailUnreadInboxMessage[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const res = await gmail.users.messages.list({
+      userId: "me",
+      labelIds: ["INBOX", "UNREAD"],
+      maxResults: 500,
+      pageToken,
+    });
+    for (const message of res.data.messages ?? []) {
+      if (message.id && message.threadId) {
+        messages.push({ id: message.id, threadId: message.threadId });
+      }
+    }
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return messages;
+}
+
+export function isHistoryIdExpired(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: number; response?: { status?: number } };
+  return candidate.code === 404 || candidate.response?.status === 404;
 }
 
 export async function getMessage(
@@ -255,7 +352,6 @@ export async function startWatch(): Promise<{
     userId: "me",
     requestBody: {
       topicName,
-      labelIds: ["INBOX"],
     },
   });
 

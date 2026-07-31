@@ -2,7 +2,15 @@ import type { APIRoute } from "astro";
 import { OAuth2Client } from "google-auth-library";
 import { getSupabase } from "../../../lib/supabase";
 import { getPusher } from "../../../lib/pusher";
-import { listHistory, getMessage } from "../../../lib/gmail";
+import {
+  getInboxUnreadCount,
+  getMessage,
+  getMessageState,
+  isHistoryIdExpired,
+  listHistory,
+  startWatch,
+} from "../../../lib/gmail";
+import { reconcileUnreadInbox } from "../../../lib/emailSync";
 import { classifyEmail } from "../../../lib/classify";
 import { sendDiscordNotification } from "../../../lib/discord";
 import { judgeEmailImportance } from "../../../lib/gemini";
@@ -15,6 +23,7 @@ import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub
 interface SyncStateRow {
   watch_address: string;
   last_history_id: number;
+  recovery_history_id?: number | null;
 }
 
 const AUDIENCE = import.meta.env.PUBSUB_AUDIENCE;
@@ -95,7 +104,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   const { data: syncState } = await supabase
     .from("gmail_sync_state" as never)
-    .select("last_history_id")
+    .select("last_history_id, recovery_history_id")
     .eq("watch_address", emailAddress)
     .single() as { data: SyncStateRow | null };
 
@@ -121,8 +130,16 @@ export const POST: APIRoute = async ({ request }) => {
     latestHistoryId = fetchedHistoryId || historyId;
 
 
-    for (const { messageId } of messages) {
+    for (const change of messages) {
+      const { messageId } = change;
+      const kind = change.kind ?? "added";
       try {
+        if (kind === "deleted") {
+          const { error } = await supabase.from("emails" as never).delete().eq("id", messageId);
+          if (error) throw error;
+          continue;
+        }
+
         // 冪等守門：重送時已處理過的郵件直接跳過，避免重複處理
         const { data: existing } = await supabase
           .from("emails" as never)
@@ -130,10 +147,18 @@ export const POST: APIRoute = async ({ request }) => {
           .eq("id", messageId)
           .maybeSingle() as { data: { id: string; is_important?: boolean; category?: string | null } | null };
 
-        // 已豐富化（enrich 一定會寫入非 null 的 category）就整封跳過；
-        // 只寫入基礎資料但豐富化失敗的信，落到下方補齊 Gemini 判斷。
-        if (existing && existing.category !== null) {
-          continue;
+        // 既有郵件或標籤事件只需刷新 Gmail 狀態，不能再因 category 已存在而跳過。
+        if (existing || kind === "stateChanged") {
+          const state = await getMessageState(messageId);
+          if (existing) {
+            const { error } = await supabase.from("emails" as never)
+              .update({ labels: state.labels, is_read: state.isRead } as never)
+              .eq("id", messageId);
+            if (error) throw error;
+            if (existing.category !== null) continue;
+          }
+          // 非收件匣狀態變更且本地沒有此信，不需建立歷史資料。
+          if (!state.labels.includes("INBOX")) continue;
         }
 
         const gmailMsg = await getMessage(messageId);
@@ -248,6 +273,21 @@ export const POST: APIRoute = async ({ request }) => {
       }
     }
   } catch (err) {
+    if (isHistoryIdExpired(err)) {
+      try {
+        const recoveryHistoryId = syncState?.recovery_history_id
+          ? String(syncState.recovery_history_id)
+          : (await startWatch()).historyId;
+        const result = await reconcileUnreadInbox(20, recoveryHistoryId);
+        return new Response(JSON.stringify({ status: "reconciling", ...result }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (recoveryError) {
+        console.error("History recovery failed:", recoveryError);
+        return new Response("History recovery failed", { status: 500 });
+      }
+    }
     console.error("listHistory failed:", err);
     return new Response("listHistory failed", { status: 500 });
   }
@@ -257,10 +297,18 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response("Partial failure", { status: 500 });
   }
 
+  let inboxThreadsUnread: number | undefined;
+  try {
+    inboxThreadsUnread = await getInboxUnreadCount();
+  } catch (error) {
+    console.error("Failed to refresh Gmail unread thread count:", error);
+  }
+
   await supabase
     .from("gmail_sync_state" as never)
     .update({
       last_history_id: Number(latestHistoryId),
+      ...(inboxThreadsUnread === undefined ? {} : { inbox_threads_unread: inboxThreadsUnread }),
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
@@ -275,4 +323,3 @@ export const POST: APIRoute = async ({ request }) => {
 
   return new Response("OK", { status: 200 });
 };
-

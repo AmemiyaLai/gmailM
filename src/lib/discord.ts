@@ -410,7 +410,7 @@ export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<
           url: siteUrl || undefined,
           color: SUMMARY_COLOR,
           fields: [
-            { name: "未讀郵件數", value: String(summary.emailCount), inline: true },
+            { name: "未讀討論串數", value: String(summary.emailCount), inline: true },
             {
               name: "涵蓋期間",
               value: `${summary.periodStart.toLocaleString("zh-TW")} ～ ${summary.periodEnd.toLocaleString("zh-TW")}`,

@@ -1,9 +1,11 @@
 import type { APIRoute } from "astro";
 import { sendDiscordSummary } from "../../../lib/discord";
-import { syncEmailsFromGmail } from "../../../lib/emailSync";
+import { reconcileUnreadInbox, syncEmailsFromGmail } from "../../../lib/emailSync";
 import { generateUnreadSummary, SummaryError } from "../../../lib/summaryService";
 
-const SYNC_LIMIT = 50;
+// 每封信都是一次序列 Gmail 往返，50 封時實測整支端點要 38-47 秒，逼近 Vercel
+// function 上限。webhook 才是即時進信的主路徑，這裡只是後備輪詢，20 封足夠。
+const SYNC_LIMIT = 20;
 
 function isQuietHours(): boolean {
   const hour = Number(
@@ -27,6 +29,7 @@ export const GET: APIRoute = async ({ request }) => {
   let syncResult = { imported: 0, failed: 0 };
   try {
     syncResult = await syncEmailsFromGmail(SYNC_LIMIT);
+    await reconcileUnreadInbox(SYNC_LIMIT);
   } catch (err) {
     console.error("Hourly summary: Gmail sync failed:", err);
   }

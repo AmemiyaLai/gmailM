@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { mockGetInboxUnreadCount } = vi.hoisted(() => ({
+  mockGetInboxUnreadCount: vi.fn(),
+}));
+
+vi.mock("../lib/gmail", () => ({
+  getInboxUnreadCount: mockGetInboxUnreadCount,
+}));
+
 const mockQuery = {
   select: vi.fn().mockReturnThis(),
   eq: vi.fn().mockReturnThis(),
@@ -10,6 +18,7 @@ const mockQuery = {
   order: vi.fn().mockReturnThis(),
   range: vi.fn().mockReturnThis(),
   limit: vi.fn().mockReturnThis(),
+  upsert: vi.fn().mockResolvedValue({ error: null }),
   single: vi.fn().mockResolvedValue({ data: null, error: null }),
   maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null, count: 0 }),
@@ -25,6 +34,7 @@ vi.mock("../lib/supabase", () => ({
 
 import {
   getUnreadCount,
+  getGmailUnreadStatus,
   getTodayCount,
   getCategoryCounts,
   getImportantEmails,
@@ -50,6 +60,7 @@ describe("emailQueries", () => {
     mockQuery.order.mockReturnThis();
     mockQuery.range.mockReturnThis();
     mockQuery.limit.mockReturnThis();
+    mockQuery.upsert.mockResolvedValue({ error: null });
   });
 
   describe("getUnreadCount()", () => {
@@ -67,6 +78,40 @@ describe("emailQueries", () => {
 
       const count = await getUnreadCount();
       expect(count).toBe(0);
+    });
+  });
+
+  describe("getGmailUnreadStatus()", () => {
+    it("首頁應優先使用 Gmail threadsUnread 並更新快取", async () => {
+      vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
+      mockGetInboxUnreadCount.mockResolvedValueOnce(9);
+
+      const result = await getGmailUnreadStatus();
+
+      expect(result).toMatchObject({ count: 9, source: "gmail" });
+      expect(mockQuery.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        watch_address: "me@example.com",
+        inbox_threads_unread: 9,
+      }));
+    });
+
+    it("Gmail 失敗時應使用最近的同步快取", async () => {
+      vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockGetInboxUnreadCount.mockRejectedValueOnce(new Error("gmail unavailable"));
+      mockQuery.maybeSingle.mockResolvedValueOnce({
+        data: { inbox_threads_unread: 7, updated_at: "2026-07-31T00:00:00Z" },
+        error: null,
+      });
+
+      const result = await getGmailUnreadStatus();
+
+      expect(result).toEqual({
+        count: 7,
+        source: "cache",
+        updatedAt: "2026-07-31T00:00:00Z",
+      });
+      errorSpy.mockRestore();
     });
   });
 
@@ -167,12 +212,12 @@ describe("emailQueries", () => {
       expect(result.hasMore).toBe(false);
     });
 
-    it("onlyUnread=true 應加入 is_read=false 條件", async () => {
+    it("onlyUnread=true 應改查每個討論串一列的 unread view", async () => {
       mockQuery.then = (resolve: (v: unknown) => void) =>
         resolve({ data: [], error: null, count: 0 });
 
       await listEmails({ onlyUnread: true });
-      expect(mockQuery.eq).toHaveBeenCalledWith("is_read", false);
+      expect(mockFrom).toHaveBeenCalledWith("unread_inbox_threads");
     });
 
     it("onlyImportant=true 應加入 is_important=true 條件", async () => {

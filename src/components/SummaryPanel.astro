@@ -24,7 +24,7 @@ const { summary, class: className } = Astro.props;
     <>
       <div style="display:flex; align-items:center; gap:var(--space-3); margin-bottom:var(--space-2);">
         <span class="badge" style="background:var(--color-primary-muted); color:var(--color-primary-hover);">
-          {summary.email_count} 封未讀
+          {summary.email_count} 個未讀討論串
         </span>
         <span style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
           涵蓋期間：{new Date(summary.period_start).toLocaleString("zh-TW")} ～ {new Date(summary.period_end).toLocaleString("zh-TW")}

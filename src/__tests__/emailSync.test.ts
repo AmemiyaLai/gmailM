@@ -5,6 +5,9 @@ const mockFirstSenderInsert = vi.fn();
 const mockTrigger = vi.fn().mockResolvedValue({});
 const mockListMessages = vi.fn();
 const mockGetMessage = vi.fn();
+const mockGetMessageState = vi.fn();
+const mockListUnreadInboxMessages = vi.fn();
+const mockGetInboxUnreadCount = vi.fn();
 
 vi.mock("../lib/supabase", () => ({
   getSupabase: vi.fn(() => ({
@@ -23,6 +26,9 @@ vi.mock("../lib/pusher", () => ({
 vi.mock("../lib/gmail", () => ({
   listMessages: (...args: unknown[]) => mockListMessages(...args),
   getMessage: (...args: unknown[]) => mockGetMessage(...args),
+  getMessageState: (...args: unknown[]) => mockGetMessageState(...args),
+  listUnreadInboxMessages: (...args: unknown[]) => mockListUnreadInboxMessages(...args),
+  getInboxUnreadCount: (...args: unknown[]) => mockGetInboxUnreadCount(...args),
 }));
 
 const mockEvaluateAndStoreTrust = vi.fn();
@@ -30,7 +36,7 @@ vi.mock("../lib/senderTrustService", () => ({
   evaluateAndStoreTrust: (...args: unknown[]) => mockEvaluateAndStoreTrust(...args),
 }));
 
-import { syncEmailsFromGmail } from "../lib/emailSync";
+import { reconcileUnreadInbox, syncEmailsFromGmail } from "../lib/emailSync";
 
 describe("syncEmailsFromGmail()", () => {
   beforeEach(() => {
@@ -386,3 +392,130 @@ describe("syncEmailsFromGmail()", () => {
   });
 });
 
+describe("reconcileUnreadInbox()", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
+    mockGetInboxUnreadCount.mockResolvedValue(1);
+    mockEvaluateAndStoreTrust.mockResolvedValue({ level: "unverified" });
+  });
+
+  it("Gmail 有但資料庫缺少的未讀郵件應補匯入", async () => {
+    const emailUpsert = vi.fn().mockResolvedValue({ error: null });
+    const stateUpsert = vi.fn().mockResolvedValue({ error: null });
+    const storedQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      contains: vi.fn().mockReturnThis(),
+      range: vi.fn().mockResolvedValue({ data: [], error: null }),
+      upsert: emailUpsert,
+    };
+    const firstSenderQuery = {
+      insert: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: null, error: { code: "23505" } }),
+        }),
+      }),
+    };
+    const from = vi.fn((table: string) => {
+      if (table === "emails") return storedQuery;
+      if (table === "gmail_sync_state") return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        upsert: stateUpsert,
+      };
+      return firstSenderQuery;
+    });
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from } as never);
+    mockListUnreadInboxMessages.mockResolvedValue([{ id: "m1", threadId: "t1" }]);
+    mockGetMessage.mockResolvedValue({
+      id: "m1", threadId: "t1", sender: "a@example.com", recipient: "me@example.com",
+      subject: "Hi", snippet: "", bodyHtml: "", bodyPlain: "",
+      labels: ["INBOX", "UNREAD"], receivedAt: new Date("2026-07-31T00:00:00Z"),
+      isRead: false, authenticationResults: "", receivedSpf: "",
+    });
+
+    const result = await reconcileUnreadInbox(20);
+
+    expect(result).toMatchObject({ reconciled: 1, remaining: 0, failed: 0, completed: true });
+    expect(emailUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "m1", is_read: false, labels: ["INBOX", "UNREAD"] }),
+      { onConflict: "id" },
+    );
+    expect(stateUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      inbox_threads_unread: 1,
+      reconciliation_status: "idle",
+    }));
+  });
+
+  it("資料庫殘留未讀郵件應依 Gmail metadata 校正", async () => {
+    const updateEq = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn().mockReturnValue({ eq: updateEq });
+    const storedQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      contains: vi.fn().mockReturnThis(),
+      range: vi.fn().mockResolvedValue({ data: [{ id: "stale" }], error: null }),
+      update,
+      delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+    };
+    const stateUpsert = vi.fn().mockResolvedValue({ error: null });
+    const stateQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { recovery_history_id: 777 }, error: null }),
+      upsert: stateUpsert,
+    };
+    const from = vi.fn((table: string) =>
+      table === "gmail_sync_state" ? stateQuery : storedQuery);
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from } as never);
+    mockListUnreadInboxMessages.mockResolvedValue([]);
+    mockGetMessageState.mockResolvedValue({
+      id: "stale", threadId: "t1", labels: ["INBOX"], isRead: true,
+    });
+
+    const result = await reconcileUnreadInbox(20);
+
+    expect(result.completed).toBe(true);
+    expect(update).toHaveBeenCalledWith({ labels: ["INBOX"], is_read: true });
+    expect(updateEq).toHaveBeenCalledWith("id", "stale");
+    expect(stateUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      last_history_id: 777,
+      recovery_history_id: null,
+    }));
+  });
+
+  it("批次上限應保留 remaining 供下一次續跑", async () => {
+    const storedQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      contains: vi.fn().mockReturnThis(),
+      range: vi.fn().mockResolvedValue({ data: [], error: null }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+    };
+    const stateUpsert = vi.fn().mockResolvedValue({ error: null });
+    const stateQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      upsert: stateUpsert,
+    };
+    const from = vi.fn((table: string) =>
+      table === "gmail_sync_state" ? stateQuery : storedQuery);
+    const { getSupabase } = await import("../lib/supabase");
+    vi.mocked(getSupabase).mockReturnValue({ from } as never);
+    mockListUnreadInboxMessages.mockResolvedValue([
+      { id: "m1", threadId: "t1" },
+      { id: "m2", threadId: "t2" },
+    ]);
+    mockGetMessage.mockRejectedValue(new Error("not needed for second item"));
+
+    const result = await reconcileUnreadInbox(0);
+
+    expect(result).toMatchObject({ reconciled: 0, remaining: 2, completed: false });
+    expect(stateUpsert).toHaveBeenCalledWith(expect.objectContaining({ reconciliation_status: "running" }));
+  });
+});

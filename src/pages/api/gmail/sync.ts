@@ -1,12 +1,12 @@
 import type { APIRoute } from "astro";
-import { syncEmailsFromGmail } from "../../../lib/emailSync";
+import { reconcileUnreadInbox } from "../../../lib/emailSync";
 
-const MANUAL_SYNC_LIMIT = 50;
+const RECONCILE_BATCH_SIZE = 20;
 
 export const POST: APIRoute = async () => {
   try {
-    const { imported, failed } = await syncEmailsFromGmail(MANUAL_SYNC_LIMIT);
-    return new Response(JSON.stringify({ status: "ok", imported, failed }), {
+    const result = await reconcileUnreadInbox(RECONCILE_BATCH_SIZE);
+    return new Response(JSON.stringify({ status: result.completed ? "ok" : "reconciling", ...result }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

@@ -26,7 +26,7 @@ const { emails, hasMore } = await listEmails({
 });
 
 const badge = filters.category ? categoryBadge(filters.category) : null;
-const heading = filters.category ? `未讀郵件 · ${badge?.label ?? filters.category}` : "未讀郵件";
+const heading = filters.category ? `未讀討論串 · ${badge?.label ?? filters.category}` : "未讀討論串";
 
 const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
 ---
@@ -90,7 +90,7 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
 
     {emails.length === 0 && (
       <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
-        目前沒有未讀郵件。
+        目前沒有未讀討論串。
       </div>
     )}
   </div>

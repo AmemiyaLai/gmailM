@@ -5,6 +5,7 @@ import type { AnalyticsEmail, AnalyticsRange } from "./emailAnalytics";
 import { rangeToQueryBounds } from "./emailAnalytics";
 import { endOfTaipeiDate, startOfTaipeiDate } from "./emailFilters";
 import type { AuthResult, TrustEvidence, TrustLevel } from "./senderTrust";
+import { getInboxUnreadCount } from "./gmail";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -133,10 +134,46 @@ function startOfTodayTaipei(): Date {
 export async function getUnreadCount(): Promise<number> {
   const supabase = getSupabase();
   const { count } = await supabase
-    .from("emails" as never)
-    .select("id", { count: "exact", head: true })
-    .eq("is_read", false);
+    .from("unread_inbox_threads" as never)
+    .select("id", { count: "exact", head: true });
   return count ?? 0;
+}
+
+export interface GmailUnreadStatus {
+  count: number;
+  source: "gmail" | "cache" | "database";
+  updatedAt: string | null;
+}
+
+export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
+  const supabase = getSupabase();
+  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  try {
+    const count = await getInboxUnreadCount();
+    const updatedAt = new Date().toISOString();
+    if (watchAddress) {
+      await supabase.from("gmail_sync_state" as never).upsert({
+        watch_address: watchAddress,
+        inbox_threads_unread: count,
+        updated_at: updatedAt,
+      } as never);
+    }
+    return { count, source: "gmail", updatedAt };
+  } catch (error) {
+    console.error("讀取 Gmail 未讀討論串數失敗，改用同步快取：", error);
+    if (watchAddress) {
+      const { data } = await supabase
+        .from("gmail_sync_state" as never)
+        .select("inbox_threads_unread, updated_at")
+        .eq("watch_address", watchAddress)
+        .maybeSingle();
+      const cached = data as { inbox_threads_unread?: number | null; updated_at?: string | null } | null;
+      if (cached?.inbox_threads_unread !== null && cached?.inbox_threads_unread !== undefined) {
+        return { count: cached.inbox_threads_unread, source: "cache", updatedAt: cached.updated_at ?? null };
+      }
+    }
+    return { count: await getUnreadCount(), source: "database", updatedAt: null };
+  }
 }
 
 export async function getTodayCount(): Promise<number> {
@@ -294,7 +331,7 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
   const supabase = getSupabase();
 
   let query = supabase
-    .from("emails" as never)
+    .from((onlyUnread ? "unread_inbox_threads" : "emails") as never)
     .select(PREVIEW_COLUMNS)
     .order("received_at", { ascending: false })
     .range(offset, offset + limit);
@@ -302,9 +339,7 @@ export async function listEmails(opts: ListEmailsOptions = {}): Promise<ListEmai
   if (category) {
     query = query.eq("category", category);
   }
-  if (onlyUnread) {
-    query = query.eq("is_read", false);
-  }
+  // unread_inbox_threads 已限定 INBOX + UNREAD，且每個 thread_id 只保留最新一封。
   if (onlyImportant) {
     query = query.eq("is_important", true);
   }
@@ -385,9 +420,8 @@ export async function getSenderGroupUnreadCounts(
 
   // 取得所有未讀郵件的 sender 清單（不需要完整資料）
   const { data } = await supabase
-    .from("emails" as never)
-    .select("sender")
-    .eq("is_read", false);
+    .from("unread_inbox_threads" as never)
+    .select("sender");
 
   const senders: string[] = ((data ?? []) as { sender: string }[]).map(
     (r) => r.sender
@@ -431,9 +465,8 @@ export async function listEmailsByGroup(
   if (groupId !== "others" && group && group.patterns.length > 0) {
     // 正常群組：取出所有未讀郵件，在記憶體中過濾（Supabase JS SDK 不支援 OR ilike）
     const { data } = await supabase
-      .from("emails" as never)
+      .from("unread_inbox_threads" as never)
       .select(PREVIEW_COLUMNS)
-      .eq("is_read", false)
       .order("received_at", { ascending: false })
       .range(0, offset + limit + 500); // 多取一些以便過濾後仍有足夠資料
 
@@ -451,9 +484,8 @@ export async function listEmailsByGroup(
     // 「其他」群組：排除所有已匹配群組的 pattern
     const knownGroups = groups.filter((g) => g.id !== "others");
     const { data } = await supabase
-      .from("emails" as never)
+      .from("unread_inbox_threads" as never)
       .select(PREVIEW_COLUMNS)
-      .eq("is_read", false)
       .order("received_at", { ascending: false })
       .range(0, offset + limit + 500);
 
@@ -488,9 +520,8 @@ export async function getSenderGroupTopSenders(
   const supabase = getSupabase();
 
   const { data } = await supabase
-    .from("emails" as never)
-    .select("sender")
-    .eq("is_read", false);
+    .from("unread_inbox_threads" as never)
+    .select("sender");
 
   const rows = (data ?? []) as { sender: string }[];
 

@@ -2,11 +2,12 @@
 import SidebarLayout from "../../layouts/SidebarLayout.astro";
 import EmailCard from "../../components/EmailCard.astro";
 import FilterBar from "../../components/FilterBar.astro";
+import EmailListShell from "../../components/EmailListShell.astro";
 import { listEmails } from "../../lib/emailQueries";
 import { categoryBadge } from "../../lib/categoryBadge";
 import { parseEmailFilterParams, buildFilterHref } from "../../lib/emailFilters";
 import { extractSenderName } from "../../lib/senderUtils";
-import { partitionEmailsBySender } from "../../lib/emailDisplayGroups";
+import { buildSenderJumpItems, partitionEmailsBySender } from "../../lib/emailDisplayGroups";
 
 const PAGE_SIZE = 50;
 
@@ -29,6 +30,12 @@ const badge = filters.category ? categoryBadge(filters.category) : null;
 const heading = filters.important ? "重要郵件" : filters.category ? `分類：${badge?.label ?? filters.category}` : "全部郵件";
 
 const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
+const displayedEmails = [
+  ...collapsibleGroups.flatMap((group) => group.emails),
+  ...standaloneEmails,
+];
+const senderJumpItems = buildSenderJumpItems(displayedEmails);
+const senderJumpIdBySender = new Map(senderJumpItems.map((item) => [item.sender, item.id]));
 ---
 
 <SidebarLayout
@@ -36,22 +43,23 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
   activeView={filters.important ? "important" : "all"}
   activeCategory={filters.category ?? null}
 >
-  <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
+  <EmailListShell items={senderJumpItems}>
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
 
-  <FilterBar
-    action="/emails"
-    category={filters.category}
-    sender={filters.sender}
-    recipient={filters.recipient}
-    from={filters.from}
-    to={filters.to}
-    unread={filters.unread}
-    important={filters.important}
-  />
+      <FilterBar
+        action="/emails"
+        category={filters.category}
+        sender={filters.sender}
+        recipient={filters.recipient}
+        from={filters.from}
+        to={filters.to}
+        unread={filters.unread}
+        important={filters.important}
+      />
 
-  <div id="email-list" data-unread-only={filters.unread ? "true" : "false"} style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
+      <div id="email-list" class="email-list-scroll" data-unread-only={filters.unread ? "true" : "false"} style="border:1px solid var(--color-border); border-radius:var(--radius-md);">
     {collapsibleGroups.map((group, i) => (
-      <details class="sender-group" open={i === 0} data-sender={group.sender}>
+      <details id={senderJumpIdBySender.get(group.sender)} class="sender-group sender-jump-target" open={i === 0} data-sender={group.sender}>
           <summary class="sender-group-header">
             <span class="sender-group-toggle"></span>
             <input type="checkbox" class="group-select-all" aria-label={`全選 ${group.sender}`} />
@@ -78,18 +86,23 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
     ))}
 
     {standaloneEmails.map((email) => (
-      <EmailCard
-        id={email.id}
-        sender={email.sender}
-        subject={email.subject}
-        snippet={email.snippet}
-        receivedAt={email.received_at}
-        isRead={email.is_read}
-        category={email.category}
-        isImportant={email.is_important}
-        isStarred={email.is_starred}
-        isFirstSender={email.is_first_sender}
-      />
+      <div
+        id={senderJumpIdBySender.get(email.sender)}
+        class:list={{ "sender-jump-target": senderJumpIdBySender.has(email.sender) }}
+      >
+        <EmailCard
+          id={email.id}
+          sender={email.sender}
+          subject={email.subject}
+          snippet={email.snippet}
+          receivedAt={email.received_at}
+          isRead={email.is_read}
+          category={email.category}
+          isImportant={email.is_important}
+          isStarred={email.is_starred}
+          isFirstSender={email.is_first_sender}
+        />
+      </div>
     ))}
 
     {emails.length === 0 && (
@@ -97,14 +110,15 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
         沒有符合條件的郵件。
       </div>
     )}
-  </div>
+      </div>
 
-  <div style="display:flex; justify-content:space-between; margin-top:var(--space-8);">
-    {filters.page > 1 ? (
-      <a href={buildFilterHref("/emails", { ...filters, page: filters.page - 1 })} class="btn btn-outline">上一頁</a>
-    ) : <span />}
-    {hasMore && <a href={buildFilterHref("/emails", { ...filters, page: filters.page + 1 })} class="btn btn-outline">下一頁</a>}
-  </div>
+      <div style="display:flex; justify-content:space-between; margin-top:var(--space-8);">
+        {filters.page > 1 ? (
+          <a href={buildFilterHref("/emails", { ...filters, page: filters.page - 1 })} class="btn btn-outline">上一頁</a>
+        ) : <span />}
+        {hasMore && <a href={buildFilterHref("/emails", { ...filters, page: filters.page + 1 })} class="btn btn-outline">下一頁</a>}
+      </div>
+  </EmailListShell>
 
   <style>
     .sender-group { border-bottom: 1px solid var(--color-border-subtle); }

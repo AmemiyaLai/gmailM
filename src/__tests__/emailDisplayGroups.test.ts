@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { partitionEmailsBySender } from "../lib/emailDisplayGroups";
+import { buildSenderJumpItems, partitionEmailsBySender } from "../lib/emailDisplayGroups";
 
 const email = (id: string, sender: string, received_at: string) => ({
   id,
@@ -40,5 +40,62 @@ describe("partitionEmailsBySender()", () => {
       "newer@example.com",
       "older@example.com",
     ]);
+  });
+});
+
+describe("buildSenderJumpItems()", () => {
+  const jumpEmail = (
+    sender: string,
+    is_read: boolean,
+    is_important = false,
+  ) => ({ sender, is_read, is_important });
+
+  it("應只保留重複、未讀或重要寄件者", () => {
+    const result = buildSenderJumpItems([
+      jumpEmail("normal@example.com", true),
+      jumpEmail("repeat@example.com", true),
+      jumpEmail("unread@example.com", false),
+      jumpEmail("important@example.com", true, true),
+      jumpEmail("repeat@example.com", true),
+    ]);
+
+    expect(result.map(({ sender }) => sender)).toEqual([
+      "repeat@example.com",
+      "unread@example.com",
+      "important@example.com",
+    ]);
+  });
+
+  it("應依首次出現順序彙總郵件、未讀與重要數量", () => {
+    const result = buildSenderJumpItems([
+      jumpEmail('"Alice" <alice@example.com>', false, true),
+      jumpEmail("bob@example.com", false),
+      jumpEmail('"Alice" <alice@example.com>', true),
+      jumpEmail("bob@example.com", false, true),
+    ], "quick");
+
+    expect(result).toEqual([
+      {
+        id: "quick-1",
+        sender: '"Alice" <alice@example.com>',
+        label: "Alice",
+        count: 2,
+        unreadCount: 1,
+        importantCount: 1,
+      },
+      {
+        id: "quick-2",
+        sender: "bob@example.com",
+        label: "bob@example.com",
+        count: 2,
+        unreadCount: 2,
+        importantCount: 1,
+      },
+    ]);
+  });
+
+  it("空清單或只有單封普通已讀郵件時應回傳空導航", () => {
+    expect(buildSenderJumpItems([])).toEqual([]);
+    expect(buildSenderJumpItems([jumpEmail("normal@example.com", true)])).toEqual([]);
   });
 });

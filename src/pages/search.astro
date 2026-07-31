@@ -2,9 +2,11 @@
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
+import EmailListShell from "../components/EmailListShell.astro";
 import { buildEmailSearchPatterns } from "../lib/emailSearch";
 import { getSupabase } from "../lib/supabase";
 import { endOfTaipeiDate, parseEmailFilterParams, startOfTaipeiDate } from "../lib/emailFilters";
+import { buildSenderJumpItems } from "../lib/emailDisplayGroups";
 
 interface EmailResult {
   id: string;
@@ -53,9 +55,21 @@ if (filters.unread) {
 
 const { data, error } = await query;
 const emails = (data ?? []) as EmailResult[];
+const senderJumpItems = buildSenderJumpItems(emails);
+const senderJumpIdBySender = new Map(senderJumpItems.map((item) => [item.sender, item.id]));
+const senderJumpIdByEmailId = new Map<string, string>();
+const anchoredJumpIds = new Set<string>();
+for (const email of emails) {
+  const jumpId = senderJumpIdBySender.get(email.sender);
+  if (jumpId && !anchoredJumpIds.has(jumpId)) {
+    senderJumpIdByEmailId.set(email.id, jumpId);
+    anchoredJumpIds.add(jumpId);
+  }
+}
 ---
 
 <SidebarLayout title="搜尋 — Gmail 即時監控面板" activeView="search">
+  <EmailListShell items={senderJumpItems}>
     <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">搜尋郵件</h1>
 
     <FilterBar
@@ -75,9 +89,13 @@ const emails = (data ?? []) as EmailResult[];
       </div>
     )}
 
-    <div id="email-list" data-unread-only={filters.unread ? "true" : "false"} style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
+    <div id="email-list" class="email-list-scroll" data-unread-only={filters.unread ? "true" : "false"} style="border:1px solid var(--color-border); border-radius:var(--radius-md);">
       {emails.map((email) => (
-        <EmailCard
+        <div
+          id={senderJumpIdByEmailId.get(email.id)}
+          class:list={{ "sender-jump-target": senderJumpIdByEmailId.has(email.id) }}
+        >
+          <EmailCard
           id={email.id}
           sender={email.sender}
           subject={email.subject}
@@ -87,7 +105,8 @@ const emails = (data ?? []) as EmailResult[];
           category={email.category}
           isImportant={email.is_important}
           isStarred={(email.labels ?? []).includes("STARRED")}
-        />
+          />
+        </div>
       ))}
 
       {emails.length === 0 && !error && (
@@ -96,6 +115,7 @@ const emails = (data ?? []) as EmailResult[];
         </div>
       )}
     </div>
+  </EmailListShell>
 
     <script>
       import { initEmailList } from "../lib/emailListClient";

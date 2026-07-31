@@ -28,6 +28,7 @@ function setupSupabase(error: unknown = null) {
     eq: vi.fn().mockResolvedValue({ error }),
   };
   vi.mocked(getSupabase).mockReturnValue({ from: vi.fn(() => chain) } as never);
+  return chain;
 }
 
 describe("PATCH /api/emails/[id]/read", () => {
@@ -69,17 +70,18 @@ describe("PATCH /api/emails/[id]/read", () => {
     expect(res.status).toBe(500);
   });
 
-  it("Gmail 同步失敗時應回傳 207", async () => {
-    setupSupabase();
+  it("Gmail 同步失敗時應回傳 502", async () => {
+    const chain = setupSupabase();
     vi.mocked(markAsRead).mockRejectedValueOnce(new Error("gmail fail"));
     const res = await PATCH(makeContext("msg-1", { read: true }));
-    expect(res.status).toBe(207);
+    expect(res.status).toBe(502);
+    expect(chain.update).not.toHaveBeenCalled();
   });
 
-  it("Gmail 同步失敗（markAsUnread）時應回傳 207", async () => {
+  it("Gmail 同步失敗（markAsUnread）時應回傳 502", async () => {
     setupSupabase();
     vi.mocked(markAsUnread).mockRejectedValueOnce(new Error("gmail fail"));
     const res = await PATCH(makeContext("msg-1", { read: false }));
-    expect(res.status).toBe(207);
+    expect(res.status).toBe(502);
   });
 });

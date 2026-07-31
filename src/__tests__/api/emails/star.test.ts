@@ -99,12 +99,12 @@ describe("PATCH /api/emails/[id]/star", () => {
     expect(res.status).toBe(500);
   });
 
-  it("Gmail 同步失敗時應回傳 207", async () => {
+  it("Gmail 同步失敗時應回傳 502", async () => {
     setupSupabase({ fetchData: { labels: [] } });
     vi.mocked(setStarred).mockRejectedValueOnce(new Error("gmail fail"));
 
     const res = await PATCH(makeContext("msg-1", { starred: true }));
-    expect(res.status).toBe(207);
+    expect(res.status).toBe(502);
   });
 
   it("labels 為 null 時應處理為空陣列", async () => {

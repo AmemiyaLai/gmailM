@@ -35,30 +35,30 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     ? Array.from(new Set([...currentLabels, "STARRED"]))
     : currentLabels.filter((label) => label !== "STARRED");
 
-  const { error } = await supabase
-    .from("emails" as never)
-    .update({ labels: newLabels } as never)
-    .eq("id", id);
-
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   try {
     await setStarred(id, starred);
   } catch (err) {
     console.error(`Failed to sync star status to Gmail for ${id}:`, err);
     return new Response(
       JSON.stringify({
-        status: "recorded",
+        status: "failed",
         gmailSync: "failed",
         gmailError: err instanceof Error ? err.message : String(err),
       }),
-      { status: 207, headers: { "Content-Type": "application/json" } },
+      { status: 502, headers: { "Content-Type": "application/json" } },
     );
+  }
+
+  const { error } = await supabase
+    .from("emails" as never)
+    .update({ labels: newLabels } as never)
+    .eq("id", id);
+
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message, gmailSync: "ok" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return new Response(JSON.stringify({ status: "ok" }), {

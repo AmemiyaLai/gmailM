@@ -84,7 +84,7 @@ describe("POST /api/emails/bulk", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body.succeeded).toEqual(["a", "b"]);
+    expect(body.succeeded).toEqual(["a"]);
     expect(body.gmailFailed).toEqual(["b"]);
   });
 

@@ -3,7 +3,7 @@ import { categoryBadge } from "../lib/categoryBadge";
 import { categories } from "../lib/classify";
 
 export interface Props {
-  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics" | "cleanup" | "inbound";
+  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics" | "cleanup" | "reviews" | "inbound";
   activeCategory?: string | null;
 }
 
@@ -89,6 +89,10 @@ const { activeView = null, activeCategory = null } = Astro.props;
       <a href="/cleanup" class:list={["sidebar-link", { active: activeView === "cleanup" }]} aria-label="關鍵字清理" title="關鍵字清理">
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">delete_sweep</span>
         <span class="sidebar-label">關鍵字清理</span>
+      </a>
+      <a href="/reviews" class:list={["sidebar-link", { active: activeView === "reviews" }]} aria-label="待審核" title="待審核">
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">fact_check</span>
+        <span class="sidebar-label">待審核</span>
       </a>
     </div>
   </nav>

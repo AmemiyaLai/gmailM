@@ -1,9 +1,19 @@
 ---
 import SidebarLayout from "../layouts/SidebarLayout.astro";
-import { CLEANUP_FIELDS, cleanupFieldLabels, listKeywords, type CleanupAction, type CleanupField } from "../lib/cleanupKeywords";
-import { listReviews } from "../lib/cleanupReview";
+import { CLEANUP_FIELDS, cleanupFieldLabels, listKeywords, type CleanupAction, type CleanupField, type CleanupKeyword } from "../lib/cleanupKeywords";
+import { listReviews, type CleanupReviewRow } from "../lib/cleanupReview";
 
-const [keywords, reviews] = await Promise.all([listKeywords(), listReviews(20)]);
+// 查詢失敗會拋出（見 lib/supabase.unwrapQuery）—— 接住並顯示明確錯誤，
+// 而不是讓「資料表不存在」看起來像「還沒設關鍵字」。
+let keywords: CleanupKeyword[] = [];
+let reviews: CleanupReviewRow[] = [];
+let loadError: string | null = null;
+
+try {
+  [keywords, reviews] = await Promise.all([listKeywords(), listReviews(20)]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+}
 
 const statusLabels: Record<string, { label: string; color: string }> = {
   pending: { label: "等待審核", color: "var(--color-warning, #f97316)" },
@@ -41,7 +51,24 @@ const suggestions: { keyword: string; field: CleanupField; action: CleanupAction
   <p style="font-size:var(--font-size-sm); color:var(--color-text-tertiary); margin-bottom:var(--space-6);">
     每個關鍵字綁定「刪除」或「標記已讀」兩種動作之一。命中的郵件會在每天 07:00 與 19:00 依動作分開彙整成 Discord 審核訊息，
     你在 Discord 按下按鈕確認後才會實際執行——刪除的會移到 Gmail 垃圾桶（可復原），標記已讀不會刪除郵件。
+    也可以到 <a href="/reviews" style="color:var(--color-primary-hover);">待審核</a> 頁面直接在網頁上處理。
   </p>
+
+  {loadError && (
+    <div
+      class="card"
+      style="padding:var(--space-4); margin-bottom:var(--space-6); border-left:3px solid var(--color-error);"
+    >
+      <strong style="color:var(--color-error);">查詢失敗</strong>
+      <p style="margin-top:var(--space-2); font-size:var(--font-size-sm); color:var(--color-text-secondary);">
+        {loadError}
+      </p>
+      <p style="margin-top:var(--space-2); font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+        若訊息提到資料表不存在，請在 Supabase SQL Editor 執行 <code>scripts/sql/apply-0007-0010.sql</code>。
+        下方的關鍵字與審核記錄在此狀態下不代表實際資料。
+      </p>
+    </div>
+  )}
 
   <!-- 新增關鍵字 -->
   <section class="card" style="padding:var(--space-4); margin-bottom:var(--space-6);">

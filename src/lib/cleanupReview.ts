@@ -1,4 +1,4 @@
-import { getSupabase } from "./supabase";
+import { getSupabase, unwrapQuery } from "./supabase";
 import { trashMessage, markAsRead } from "./gmail";
 import { sendCleanupReview } from "./discord";
 import { findCandidates, type CleanupAction, type CleanupMatch } from "./cleanupKeywords";
@@ -69,22 +69,52 @@ export async function createPendingReview(action: CleanupAction, matches: Cleanu
 
 export async function getReview(reviewId: string): Promise<CleanupReviewRow | null> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .select(REVIEW_COLUMNS)
     .eq("id", reviewId)
     .maybeSingle();
-  return (data ?? null) as CleanupReviewRow | null;
+  return (unwrapQuery(result, "getReview") ?? null) as CleanupReviewRow | null;
 }
 
 export async function listReviews(limit = 20): Promise<CleanupReviewRow[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .select(REVIEW_COLUMNS)
     .order("created_at", { ascending: false })
     .limit(limit);
-  return (data ?? []) as CleanupReviewRow[];
+  return (unwrapQuery(result, "listReviews") ?? []) as CleanupReviewRow[];
+}
+
+/** 只取還在等使用者決定的審核單（/reviews 頁面與首頁統計卡用） */
+export async function listPendingReviews(limit = 50): Promise<CleanupReviewRow[]> {
+  const supabase = getSupabase();
+  const result = await supabase
+    .from("cleanup_reviews" as never)
+    .select(REVIEW_COLUMNS)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (unwrapQuery(result, "listPendingReviews") ?? []) as CleanupReviewRow[];
+}
+
+/**
+ * 待審核統計：pending 審核單數與其涵蓋的郵件總數。
+ * 首頁統計卡顯示 emails —— 那才是「等你做決定的郵件」數量。
+ */
+export async function getPendingReviewCount(): Promise<{ reviews: number; emails: number }> {
+  const supabase = getSupabase();
+  const result = await supabase
+    .from("cleanup_reviews" as never)
+    .select("email_count")
+    .eq("status", "pending");
+
+  const rows = (unwrapQuery(result, "getPendingReviewCount") ?? []) as { email_count: number | null }[];
+  return {
+    reviews: rows.length,
+    emails: rows.reduce((sum, row) => sum + (row.email_count ?? 0), 0),
+  };
 }
 
 export type DispatchOneResult =
@@ -110,14 +140,14 @@ export const DISPATCH_COOLDOWN_MS = 5_000;
 /** 最近一次送審時間（含送出失敗的，失敗也算「已嘗試」，不該立刻重試） */
 async function lastDispatchAt(): Promise<Date | null> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .select("created_at")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = data as { created_at?: string } | null;
+  const row = unwrapQuery(result, "lastDispatchAt") as { created_at?: string } | null;
   return row?.created_at ? new Date(row.created_at) : null;
 }
 
@@ -137,8 +167,9 @@ async function dispatchOne(action: CleanupAction): Promise<DispatchOneResult> {
       emails: review.matched,
     });
   } catch (err) {
-    // Discord 送不出去時把審核單標成 failed，否則這批郵件會被 idsUnderReview 永久卡住
-    await getSupabase()
+    // Discord 送不出去時把審核單標成 failed，否則這批郵件會被 idsUnderReview 永久卡住。
+    // 這裡的寫入失敗不改寫主流程結果（原始錯誤更重要），但要留痕。
+    const marked = await getSupabase()
       .from("cleanup_reviews" as never)
       .update({
         status: "failed",
@@ -146,14 +177,20 @@ async function dispatchOne(action: CleanupAction): Promise<DispatchOneResult> {
         decided_at: new Date().toISOString(),
       } as never)
       .eq("id", review.id);
+    if (marked.error) {
+      console.error(`Cleanup review ${review.id}: 標記 failed 失敗:`, marked.error.message);
+    }
     throw err;
   }
 
   if (messageId) {
-    await getSupabase()
+    const saved = await getSupabase()
       .from("cleanup_reviews" as never)
       .update({ discord_message_id: messageId } as never)
       .eq("id", review.id);
+    if (saved.error) {
+      console.error(`Cleanup review ${review.id}: 寫入 discord_message_id 失敗:`, saved.error.message);
+    }
   }
 
   return { action, status: "ok", reviewId: review.id, emailCount: review.email_count };
@@ -204,17 +241,20 @@ export type DecisionResult =
 /**
  * 條件式搶佔 pending 狀態，避免使用者連點造成重複處理。
  * 回傳 null 即代表這則審核已被處理過。
+ *
+ * 查詢失敗必須拋出，不能當成 null：否則會回報「已經處理過了」，
+ * 但實際上什麼都沒做，郵件仍留在原處而使用者以為完成了。
  */
 async function claimPending(reviewId: string, nextStatus: CleanupReviewStatus): Promise<CleanupReviewRow | null> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .update({ status: nextStatus, decided_at: new Date().toISOString() } as never)
     .eq("id", reviewId)
     .eq("status", "pending")
     .select(REVIEW_COLUMNS);
 
-  const rows = (data ?? []) as CleanupReviewRow[];
+  const rows = (unwrapQuery(result, "claimPending") ?? []) as CleanupReviewRow[];
   return rows[0] ?? null;
 }
 
@@ -255,14 +295,18 @@ async function executeReviewAction(
   }
 
   // processed_count 由 null 變成數字，同時也是「這則審核已完成處理」的標記，
-  // resumeStuckReviews 靠它判斷有沒有做完。
-  await supabase
+  // resumeStuckReviews 靠它判斷有沒有做完。寫入失敗不改寫回傳結果（動作已經做了），
+  // 但要留痕 —— 沒寫進去的話 resumeStuckReviews 之後會重跑一次（冪等，安全）。
+  const saved = await supabase
     .from("cleanup_reviews" as never)
     .update({
       processed_count: succeeded.length,
       last_error: errors.length > 0 ? errors.join("\n").slice(0, 2000) : null,
     } as never)
     .eq("id", review.id);
+  if (saved.error) {
+    console.error(`Cleanup review ${review.id}: 寫入 processed_count 失敗:`, saved.error.message);
+  }
 
   return { processedCount: succeeded.length, failedCount: ids.length - succeeded.length };
 }
@@ -290,14 +334,14 @@ export async function resumeStuckReviews(): Promise<{ resumed: number; processed
   const supabase = getSupabase();
   const cutoff = new Date(Date.now() - STUCK_REVIEW_THRESHOLD_MS).toISOString();
 
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .select(REVIEW_COLUMNS)
     .eq("status", "approved")
     .is("processed_count", null)
     .lt("decided_at", cutoff);
 
-  const stuck = (data ?? []) as CleanupReviewRow[];
+  const stuck = (unwrapQuery(result, "resumeStuckReviews") ?? []) as CleanupReviewRow[];
   let processed = 0;
 
   for (const review of stuck) {
@@ -318,4 +362,27 @@ export async function rejectReview(reviewId: string): Promise<DecisionResult> {
   const review = await claimPending(reviewId, "rejected");
   if (!review) return { status: "already-handled" };
   return { status: "rejected", action: review.action, emailCount: review.email_count };
+}
+
+export type ProcessNowResult =
+  | { status: "skipped"; reason: string }
+  | { status: "ok"; action: CleanupAction; reviewId: string; processedCount: number; failedCount: number };
+
+/**
+ * 直接處理「命中關鍵字但還沒送審」的郵件，不經 Discord。
+ * 供 /reviews 頁面使用，讓使用者不必等 07:00／19:00 的排程。
+ *
+ * 仍然會建立 cleanup_reviews 記錄（discord_message_id 留 null），稽核軌跡與排程路徑一致。
+ */
+export async function processCandidatesNow(action: CleanupAction): Promise<ProcessNowResult> {
+  const matches = await findCandidates(action);
+  if (matches.length === 0) return { status: "skipped", reason: "no matching emails" };
+
+  const review = await createPendingReview(action, matches);
+  // 使用者在網頁上就是本人確認，直接搶佔後執行；搶佔失敗代表剛剛被別的入口處理掉了
+  const claimed = await claimPending(review.id, "approved");
+  if (!claimed) return { status: "skipped", reason: "already handled" };
+
+  const { processedCount, failedCount } = await executeReviewAction(claimed);
+  return { status: "ok", action, reviewId: review.id, processedCount, failedCount };
 }

@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { mockGetSupabase } = vi.hoisted(() => ({ mockGetSupabase: vi.fn() }));
 
-vi.mock("../lib/supabase", () => ({ getSupabase: mockGetSupabase }));
+// unwrapQuery 是純邏輯（把 Supabase error 轉成例外），保留真實實作才測得到錯誤傳播
+vi.mock("../lib/supabase", async () => {
+  const actual = await vi.importActual<typeof import("../lib/supabase")>("../lib/supabase");
+  return { getSupabase: mockGetSupabase, unwrapQuery: actual.unwrapQuery, SupabaseQueryError: actual.SupabaseQueryError };
+});
 
 import {
   findCandidates,
@@ -285,5 +289,39 @@ describe("setKeywordEnabled()", () => {
   it("更新失敗時應拋出錯誤", async () => {
     mockOnce({ data: null, error: { message: "Forbidden" } });
     await expect(setKeywordEnabled("k-1", false)).rejects.toThrow("Forbidden");
+  });
+});
+
+describe("讀取查詢失敗時不得靜默降級", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const dbError = { data: null, error: { message: "relation \"cleanup_keywords\" does not exist" } };
+
+  /**
+   * 修正前：資料表不存在時 listKeywords 回傳空陣列，畫面與「還沒設關鍵字」完全一樣，
+   * 送審靜靜跳過不發 Discord 訊息，症狀無法區分。
+   */
+  it("listKeywords 查詢失敗應拋出而非回傳空陣列", async () => {
+    mockSupabaseQueries([dbError]);
+    await expect(listKeywords()).rejects.toThrow(/listKeywords.*does not exist/);
+  });
+
+  it("previewKeyword 的郵件查詢失敗應拋出", async () => {
+    mockSupabaseQueries([{ data: null, error: { message: "timeout" } }]);
+    await expect(previewKeyword("優惠", "subject")).rejects.toThrow(/fetchRecentEmails.*timeout/);
+  });
+
+  /**
+   * 這條特別重要：idsUnderReview 靜默回傳空 Set 會讓已在審核中的郵件被重複送審，
+   * 產生重複審核單與重複處理。
+   */
+  it("idsUnderReview 查詢失敗時 findCandidates 應拋出，不得把郵件當成未送審", async () => {
+    mockSupabaseQueries([
+      { data: [{ id: "k1", keyword: "優惠", field: "subject", action: "trash", enabled: true }], error: null },
+      { data: [email({ id: "a" })], error: null }, // fetchRecentEmails 成功
+      { data: null, error: { message: "permission denied" } }, // idsUnderReview 失敗
+    ]);
+
+    await expect(findCandidates("trash")).rejects.toThrow(/idsUnderReview.*permission denied/);
   });
 });

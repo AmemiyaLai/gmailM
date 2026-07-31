@@ -92,3 +92,38 @@ describe("supabase.ts", () => {
     expect(result.data).toBeNull();
   });
 });
+
+describe("unwrapQuery()", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("沒有錯誤時應原樣回傳 data", async () => {
+    const { unwrapQuery } = await import("../lib/supabase");
+    const rows = [{ id: "a" }];
+    expect(unwrapQuery({ data: rows, error: null }, "test")).toBe(rows);
+  });
+
+  it("data 為 null 且無錯誤時應回傳 null", async () => {
+    const { unwrapQuery } = await import("../lib/supabase");
+    expect(unwrapQuery({ data: null, error: null }, "test")).toBeNull();
+  });
+
+  it("有錯誤時應拋出並帶上發生位置與原始訊息", async () => {
+    const { unwrapQuery, SupabaseQueryError } = await import("../lib/supabase");
+
+    expect(() =>
+      unwrapQuery({ data: null, error: { message: "relation does not exist" } }, "listKeywords"),
+    ).toThrow(SupabaseQueryError);
+
+    // 錯誤訊息要同時包含位置與原因，才能直接從畫面上判斷該做什麼
+    expect(() =>
+      unwrapQuery({ data: null, error: { message: "relation does not exist" } }, "listKeywords"),
+    ).toThrow(/listKeywords.*relation does not exist/);
+  });
+
+  it("即使同時有 data 與 error 也應以 error 為準拋出", async () => {
+    const { unwrapQuery } = await import("../lib/supabase");
+    expect(() => unwrapQuery({ data: [{ id: "a" }], error: { message: "partial failure" } }, "test")).toThrow();
+  });
+});

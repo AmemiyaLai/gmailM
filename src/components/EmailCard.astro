@@ -246,4 +246,84 @@ const formattedDate = formatEmailDate(receivedAt);
     background-color: var(--color-bg-tertiary);
     color: var(--color-text);
   }
+
+  @media (max-width: 640px) {
+    .email-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      min-width: 860px;
+      min-height: 54px;
+      padding: var(--space-2) var(--space-3);
+    }
+
+    .email-row--important {
+      padding-left: calc(var(--space-3) - 3px);
+    }
+
+    .email-checkbox {
+      width: 18px;
+      height: 18px;
+    }
+
+    .star-btn {
+      width: 36px;
+      height: 36px;
+      padding: var(--space-1);
+    }
+
+    .star-icon {
+      font-size: 21px;
+    }
+
+    .email-link {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-height: 40px;
+    }
+
+    .email-sender {
+      max-width: 160px;
+      font-size: var(--font-size-sm);
+    }
+
+    .email-subject {
+      max-width: 40%;
+      font-size: var(--font-size-sm);
+    }
+
+    .email-snippet {
+      font-size: var(--font-size-sm);
+    }
+
+    .email-meta {
+      width: auto;
+      min-width: 220px;
+      min-height: 40px;
+      justify-content: flex-end;
+      gap: var(--space-3);
+    }
+
+    .email-actions,
+    .email-row:hover .email-actions {
+      display: flex;
+      gap: var(--space-2);
+    }
+
+    .email-row:hover .email-date {
+      display: block;
+    }
+
+    .action-btn {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      background: var(--color-bg-secondary);
+    }
+
+    .email-action-icon {
+      font-size: 18px;
+    }
+  }
 </style>

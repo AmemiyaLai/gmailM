@@ -3,10 +3,15 @@ import { reconcileUnreadInbox } from "../../../lib/emailSync";
 import { classifyGmailApiError } from "../../../lib/gmail";
 import { getSupabase } from "../../../lib/supabase";
 import { acquireGmailSyncLease, recordGmailCooldown, releaseGmailSyncLease } from "../../../lib/gmailSyncControl";
+import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
 
 const RECONCILE_BATCH_SIZE = 20;
 
 export const POST: APIRoute = async () => {
+  // Emergency traffic kill switch: do not even create a Supabase client / acquire a lease
+  // while Gmail automation is paused. This also keeps a missing migration from causing 500s.
+  if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
+
   const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
   const supabase = getSupabase();
   const admission = watchAddress

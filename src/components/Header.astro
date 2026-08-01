@@ -3,9 +3,12 @@
  * Header 元件
  * 提供包含網頁左上角 Logo、品牌標題與頂部導航之共用導航列。
  */
+import { isGmailAutomationEnabled } from "../lib/gmailAutomation";
+
+const gmailAutomationEnabled = isGmailAutomationEnabled();
 ---
 
-<header class="site-header" transition:persist="site-header">
+<header class="site-header" data-gmail-automation-enabled={String(gmailAutomationEnabled)} transition:persist="site-header">
   <div class="container header-content">
     <button
       id="mobile-sidebar-toggle"
@@ -65,7 +68,7 @@
           </span>
           <span class="sr-only" data-connection-label>即時服務連線中</span>
         </span>
-        <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即從 Gmail 同步最新郵件" aria-label="立即同步">
+        <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title={gmailAutomationEnabled ? "立即從 Gmail 同步最新郵件" : "Gmail 自動化已暫停"} aria-label="立即同步" disabled={!gmailAutomationEnabled}>
           <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
           <span class="sr-only" data-sync-label>立即同步</span>
         </button>
@@ -93,6 +96,7 @@
   import { startRealtimeConnection } from "../lib/realtimeClient";
 
   const INITIAL_SYNC_KEY = "gmail-monitor:initial-sync-completed";
+  const gmailAutomationEnabled = document.querySelector<HTMLElement>(".site-header")?.dataset.gmailAutomationEnabled === "true";
 
   startRealtimeConnection();
 
@@ -256,6 +260,7 @@
   });
 
   async function syncEmails(automatic = false) {
+    if (!gmailAutomationEnabled) return;
     const syncBtn = document.querySelector<HTMLButtonElement>("#sync-now");
     const syncLabel = document.querySelector<HTMLElement>("[data-sync-label]");
     if (!syncBtn || !syncLabel || syncBtn.disabled) return;
@@ -306,9 +311,11 @@
     }
   }
 
-  document.querySelector<HTMLButtonElement>("#sync-now")?.addEventListener("click", () => {
-    void syncEmails(false);
-  });
+  if (gmailAutomationEnabled) {
+    document.querySelector<HTMLButtonElement>("#sync-now")?.addEventListener("click", () => {
+      void syncEmails(false);
+    });
+  }
 
   const toast = document.querySelector<HTMLElement>("#header-action-toast");
   let toastTimer: number | undefined;
@@ -392,7 +399,7 @@
     });
   });
 
-  if (!sessionStorage.getItem(INITIAL_SYNC_KEY)) {
+  if (gmailAutomationEnabled && !sessionStorage.getItem(INITIAL_SYNC_KEY)) {
     sessionStorage.setItem(INITIAL_SYNC_KEY, "pending");
     void syncEmails(true);
   }

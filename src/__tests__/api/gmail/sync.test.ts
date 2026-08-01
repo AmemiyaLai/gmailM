@@ -13,7 +13,20 @@ vi.mock("../../../lib/emailSync", () => ({
 import { POST } from "../../../pages/api/gmail/sync";
 
 describe("POST /api/gmail/sync", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
+  });
+
+  it("自動化暫停時不應建立 lease 或呼叫 Gmail", async () => {
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "false");
+
+    const res = await POST({} as never);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "paused" });
+    expect(mockReconcileUnreadInbox).not.toHaveBeenCalled();
+  });
 
   it("手動同步成功時應回傳對帳結果", async () => {
     const res = await POST({} as never);

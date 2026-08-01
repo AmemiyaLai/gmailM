@@ -3,13 +3,18 @@ import { OAuth2Client } from "google-auth-library";
 import { getSupabase } from "../../../lib/supabase";
 import { getPusher } from "../../../lib/pusher";
 import {
-  getInboxUnreadCount,
+  classifyGmailApiError,
   getMessage,
   getMessageState,
   isHistoryIdExpired,
   listHistory,
   startWatch,
 } from "../../../lib/gmail";
+import {
+  acquireGmailSyncLease,
+  recordGmailCooldown,
+  releaseGmailSyncLease,
+} from "../../../lib/gmailSyncControl";
 import { reconcileUnreadInbox } from "../../../lib/emailSync";
 import { classifyEmail } from "../../../lib/classify";
 import { sendDiscordNotification } from "../../../lib/discord";
@@ -19,11 +24,13 @@ import { registerFirstSender } from "../../../lib/firstSender";
 import { refreshSenderTags } from "../../../lib/senderTagService";
 import { evaluateAndStoreTrust } from "../../../lib/senderTrustService";
 import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub";
+import { isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
 
 interface SyncStateRow {
   watch_address: string;
   last_history_id: number;
   recovery_history_id?: number | null;
+  cooldown_until?: string | null;
 }
 
 const AUDIENCE = import.meta.env.PUBSUB_AUDIENCE;
@@ -71,6 +78,8 @@ async function verifyPubSubToken(
 }
 
 export const POST: APIRoute = async ({ request }) => {
+  // 暫停期間先 ACK，避免 Pub/Sub 重送與任何後續驗證／Gmail API 成本。
+  if (!isGmailAutomationEnabled()) return new Response(null, { status: 204 });
   const authHeader = request.headers.get("authorization");
 
   if (!authHeader?.startsWith("Bearer ")) {
@@ -102,13 +111,37 @@ export const POST: APIRoute = async ({ request }) => {
 
   const supabase = getSupabase();
 
+  let admission;
+  try {
+    admission = await acquireGmailSyncLease(supabase, emailAddress, historyId);
+  } catch (error) {
+    console.error("gmail_sync_lease_acquire_failed", { message: error instanceof Error ? error.message : String(error) });
+    return new Response("Sync lease failed", { status: 500 });
+  }
+  if (admission.status !== "acquired") {
+    return new Response(null, {
+      status: 204,
+      headers: admission.retryAfter ? { "Retry-After": admission.retryAfter } : undefined,
+    });
+  }
+  const releaseLease = async () => {
+    await releaseGmailSyncLease(supabase, emailAddress, admission.token).catch((error) =>
+      console.error("gmail_sync_lease_release_failed", { message: error instanceof Error ? error.message : String(error) }),
+    );
+  };
+
   const { data: syncState } = await supabase
     .from("gmail_sync_state" as never)
-    .select("last_history_id, recovery_history_id")
+    .select("last_history_id, recovery_history_id, cooldown_until")
     .eq("watch_address", emailAddress)
     .single() as { data: SyncStateRow | null };
 
   const lastHistoryId = syncState?.last_history_id;
+
+  if (syncState?.cooldown_until && new Date(syncState.cooldown_until).getTime() > Date.now()) {
+    await releaseLease();
+    return new Response(null, { status: 204 });
+  }
 
   if (!lastHistoryId) {
     await supabase.from("gmail_sync_state" as never).upsert({
@@ -116,13 +149,20 @@ export const POST: APIRoute = async ({ request }) => {
       last_history_id: Number(historyId),
       updated_at: new Date().toISOString(),
     } as never);
-    return new Response("OK — initial baseline recorded", { status: 200 });
+    await releaseLease();
+    return new Response(null, { status: 204 });
+  }
+
+  if (Number(historyId) <= Number(lastHistoryId)) {
+    await releaseLease();
+    return new Response(null, { status: 204 });
   }
 
   // 只有整段處理都成功才前推 last_history_id，否則回非 2xx 讓 Pub/Sub 重送，
   // 避免尚未寫入的郵件因為游標前推而永久遺失。
   let latestHistoryId = String(lastHistoryId);
   let hadFailure = false;
+  let rateLimitError: ReturnType<typeof classifyGmailApiError> | null = null;
 
   try {
     const { historyId: fetchedHistoryId, messages } = await listHistory(String(lastHistoryId));
@@ -268,7 +308,9 @@ export const POST: APIRoute = async ({ request }) => {
         }
 
       } catch (err) {
-        console.error(`Failed to process message ${messageId}:`, err);
+        const info = classifyGmailApiError(err);
+        if (info.rateLimited) rateLimitError = info;
+        console.error("gmail_message_process_failed", { messageId, status: info.status, message: info.message });
         hadFailure = true;
       }
     }
@@ -279,39 +321,65 @@ export const POST: APIRoute = async ({ request }) => {
           ? String(syncState.recovery_history_id)
           : (await startWatch()).historyId;
         const result = await reconcileUnreadInbox(20, recoveryHistoryId);
+        await releaseLease();
         return new Response(JSON.stringify({ status: "reconciling", ...result }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       } catch (recoveryError) {
-        console.error("History recovery failed:", recoveryError);
+        const info = classifyGmailApiError(recoveryError);
+        if (info.rateLimited) {
+          const retryAfter = info.retryAfter ?? new Date(Date.now() + 15 * 60_000);
+          await recordGmailCooldown(supabase, emailAddress, retryAfter, info.message).catch(() => undefined);
+          await releaseLease();
+          return new Response(null, { status: 204 });
+        }
+        console.error("gmail_history_recovery_failed", { status: info.status, message: info.message });
+        await releaseLease();
         return new Response("History recovery failed", { status: 500 });
       }
     }
-    console.error("listHistory failed:", err);
+    const info = classifyGmailApiError(err);
+    if (info.rateLimited) {
+      const retryAfter = info.retryAfter ?? new Date(Date.now() + 15 * 60_000);
+      await recordGmailCooldown(supabase, emailAddress, retryAfter, info.message).catch((dbError) =>
+        console.error("gmail_cooldown_persist_failed", { message: dbError instanceof Error ? dbError.message : String(dbError) }),
+      );
+      console.warn("gmail_rate_limited", { operation: "listHistory", retryAfter: retryAfter.toISOString() });
+      await releaseLease();
+      return new Response(null, { status: 204 });
+    }
+    console.error("gmail_list_history_failed", { status: info.status, message: info.message });
+    await releaseLease();
     return new Response("listHistory failed", { status: 500 });
   }
 
   if (hadFailure) {
+    if (rateLimitError) {
+      const retryAfter = rateLimitError.retryAfter ?? new Date(Date.now() + 15 * 60_000);
+      await recordGmailCooldown(supabase, emailAddress, retryAfter, rateLimitError.message).catch(() => undefined);
+      await releaseLease();
+      return new Response(null, { status: 204 });
+    }
     console.error("部分郵件處理失敗，保留 last_history_id 以待 Pub/Sub 重送");
+    await releaseLease();
     return new Response("Partial failure", { status: 500 });
   }
 
-  let inboxThreadsUnread: number | undefined;
-  try {
-    inboxThreadsUnread = await getInboxUnreadCount();
-  } catch (error) {
-    console.error("Failed to refresh Gmail unread thread count:", error);
-  }
-
-  await supabase
+  const { error: cursorError } = await supabase
     .from("gmail_sync_state" as never)
     .update({
       last_history_id: Number(latestHistoryId),
-      ...(inboxThreadsUnread === undefined ? {} : { inbox_threads_unread: inboxThreadsUnread }),
+      cooldown_until: null,
+      last_sync_error: null,
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
+  if (cursorError) {
+    console.error("gmail_cursor_update_failed", { message: cursorError.message });
+    await releaseLease();
+    return new Response("Cursor update failed", { status: 500 });
+  }
 
   await refreshSenderTags(supabase).catch((error) => console.error("Sender tag refresh failed:", error));
 
@@ -321,5 +389,6 @@ export const POST: APIRoute = async ({ request }) => {
     updated_at: new Date().toISOString(),
   }).catch((e) => console.error("Pusher sync-complete trigger failed:", e));
 
+  await releaseLease();
   return new Response("OK", { status: 200 });
 };

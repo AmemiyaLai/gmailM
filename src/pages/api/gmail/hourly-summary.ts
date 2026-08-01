@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { sendDiscordSummary } from "../../../lib/discord";
 import { reconcileUnreadInbox, syncEmailsFromGmail } from "../../../lib/emailSync";
 import { generateUnreadSummary, SummaryError } from "../../../lib/summaryService";
+import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
 
 // 每封信都是一次序列 Gmail 往返，50 封時實測整支端點要 38-47 秒，逼近 Vercel
 // function 上限。webhook 才是即時進信的主路徑，這裡只是後備輪詢，20 封足夠。
@@ -25,6 +26,7 @@ export const GET: APIRoute = async ({ request }) => {
   if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
+  if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
 
   let syncResult = { imported: 0, failed: 0 };
   try {

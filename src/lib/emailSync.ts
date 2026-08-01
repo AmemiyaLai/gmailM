@@ -112,7 +112,7 @@ async function listStoredUnreadInboxIds(supabase: SupabaseClient): Promise<strin
       .from("emails" as never)
       .select("id")
       .eq("is_read", false)
-      .contains("labels", ["INBOX"])
+      .filter("labels", "cs", JSON.stringify(["INBOX"]))
       .range(offset, offset + pageSize - 1);
     if (error) throw error;
     const rows = (data ?? []) as { id: string }[];
@@ -187,7 +187,10 @@ export async function reconcileUnreadInbox(
     }
   }
 
-  const remaining = Math.max(0, work.length - reconciled);
+  // 成功與失敗都已消耗本批名額，但失敗項目仍需留待下次重試。
+  const attempted = Math.min(work.length, batchSize);
+  const unattempted = work.length - attempted;
+  const remaining = unattempted + failed;
   const completed = remaining === 0 && failed === 0;
   if (watchAddress) {
     const stateUpdate: Record<string, unknown> = {

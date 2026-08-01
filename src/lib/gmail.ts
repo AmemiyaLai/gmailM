@@ -12,7 +12,44 @@ function getGmailClient() {
   oauth2Client.setCredentials({
     refresh_token: import.meta.env.GMAIL_OAUTH_REFRESH_TOKEN,
   });
-  return google.gmail({ version: "v1", auth: oauth2Client });
+  // Webhook/Pub/Sub 已有自己的節流策略；禁止 gaxios 再把單次 429 放大成多次請求。
+  return google.gmail({ version: "v1", auth: oauth2Client, retry: false, timeout: 10_000 });
+}
+
+export interface GmailApiErrorInfo {
+  status: number | null;
+  rateLimited: boolean;
+  historyExpired: boolean;
+  retryAfter: Date | null;
+  message: string;
+}
+
+export function classifyGmailApiError(error: unknown, now = new Date()): GmailApiErrorInfo {
+  const candidate = (error && typeof error === "object" ? error : {}) as {
+    code?: number; message?: string; response?: { status?: number; headers?: { get?: (name: string) => string | null } };
+    cause?: { message?: string };
+  };
+  const status = candidate.response?.status ?? candidate.code ?? null;
+  const message = candidate.cause?.message ?? candidate.message ?? String(error);
+  const retryHeader = candidate.response?.headers?.get?.("retry-after");
+  const dateMatch = message.match(/Retry after\s+([^\s]+(?:Z|[+-]\d\d:\d\d))/i);
+  let retryAfter: Date | null = null;
+  if (retryHeader) {
+    const seconds = Number(retryHeader);
+    retryAfter = Number.isFinite(seconds)
+      ? new Date(now.getTime() + seconds * 1000)
+      : new Date(retryHeader);
+  } else if (dateMatch) {
+    retryAfter = new Date(dateMatch[1]);
+  }
+  if (retryAfter && Number.isNaN(retryAfter.getTime())) retryAfter = null;
+  return {
+    status,
+    rateLimited: status === 429,
+    historyExpired: status === 404,
+    retryAfter,
+    message,
+  };
 }
 
 export interface GmailMessage {
@@ -180,9 +217,7 @@ export async function listUnreadInboxMessages(): Promise<GmailUnreadInboxMessage
 }
 
 export function isHistoryIdExpired(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const candidate = error as { code?: number; response?: { status?: number } };
-  return candidate.code === 404 || candidate.response?.status === 404;
+  return classifyGmailApiError(error).historyExpired;
 }
 
 export async function getMessage(

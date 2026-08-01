@@ -407,6 +407,7 @@ describe("reconcileUnreadInbox()", () => {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       contains: vi.fn().mockReturnThis(),
+      filter: vi.fn().mockReturnThis(),
       range: vi.fn().mockResolvedValue({ data: [], error: null }),
       upsert: emailUpsert,
     };
@@ -457,6 +458,7 @@ describe("reconcileUnreadInbox()", () => {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       contains: vi.fn().mockReturnThis(),
+      filter: vi.fn().mockReturnThis(),
       range: vi.fn().mockResolvedValue({ data: [{ id: "stale" }], error: null }),
       update,
       delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
@@ -493,6 +495,7 @@ describe("reconcileUnreadInbox()", () => {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       contains: vi.fn().mockReturnThis(),
+      filter: vi.fn().mockReturnThis(),
       range: vi.fn().mockResolvedValue({ data: [], error: null }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
     };

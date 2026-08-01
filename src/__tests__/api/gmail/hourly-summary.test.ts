@@ -74,6 +74,7 @@ describe("GET /api/gmail/hourly-summary", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-28T10:00:00+08:00"));
     vi.stubEnv("CRON_SECRET", "test-secret");
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
   });
 
   afterEach(() => {
@@ -97,6 +98,16 @@ describe("GET /api/gmail/hourly-summary", () => {
   it("Authorization 不符時應回傳 401", async () => {
     const res = await GET(makeContext("Bearer wrong"));
     expect(res.status).toBe(401);
+  });
+
+  it("自動化暫停時不應執行 Gmail 同步或摘要", async () => {
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "false");
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ status: "paused" });
+    expect(mockSyncEmailsFromGmail).not.toHaveBeenCalled();
+    expect(mockReconcileUnreadInbox).not.toHaveBeenCalled();
+    expect(mockSendDiscordSummary).not.toHaveBeenCalled();
   });
 
   it("無未讀郵件時應回傳 skipped + no unread emails", async () => {

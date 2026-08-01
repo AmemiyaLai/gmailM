@@ -1,8 +1,11 @@
-name: Hourly Email Summary
+name: Email Summary
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    # 台北時間（UTC+8）每日 07:00、13:00 與 19:00 各發送一次摘要
+    - cron: "0 23 * * *"
+    - cron: "0 5 * * *"
+    - cron: "0 11 * * *"
   workflow_dispatch:
 
 jobs:

@@ -40,7 +40,7 @@ const { groups, unreadCounts, topSenders, trends } = Astro.props;
                 class="sgcard-count"
                 style={`background: color-mix(in srgb, var(${group.colorVar}) 18%, transparent); color: var(${group.colorVar});`}
               >
-                {count} 封未讀
+                {count} 個未讀討論串
                 {trend && (
                   <span class:list={["sgcard-trend", trend.direction]} title="相較於上一筆統計紀錄">
                     {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"}

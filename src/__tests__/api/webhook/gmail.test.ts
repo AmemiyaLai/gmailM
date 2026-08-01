@@ -16,13 +16,23 @@ vi.mock("google-auth-library", () => ({
 }));
 
 const {
-  mockListHistory, mockGetMessage, mockClassifyEmail,
+  mockListHistory, mockGetMessage, mockGetMessageState, mockGetInboxUnreadCount,
+  mockStartWatch, mockIsHistoryIdExpired, mockReconcileUnreadInbox, mockClassifyEmail,
   mockSendDiscordNotification, mockJudgeEmailImportance,
   mockNormalizeSenderAddress, mockRegisterFirstSender,
   mockRefreshSenderTags, mockGetSupabase,
 } = vi.hoisted(() => ({
   mockListHistory: vi.fn(),
   mockGetMessage: vi.fn(),
+  mockGetMessageState: vi.fn().mockResolvedValue({
+    id: "msg-dup", threadId: "t-1", labels: ["INBOX", "UNREAD"], isRead: false,
+  }),
+  mockGetInboxUnreadCount: vi.fn().mockResolvedValue(5),
+  mockStartWatch: vi.fn().mockResolvedValue({ historyId: "500", expiration: "999" }),
+  mockIsHistoryIdExpired: vi.fn().mockReturnValue(false),
+  mockReconcileUnreadInbox: vi.fn().mockResolvedValue({
+    gmailThreadsUnread: 5, reconciled: 0, remaining: 0, failed: 0, completed: true,
+  }),
   mockClassifyEmail: vi.fn().mockReturnValue("devlog"),
   mockSendDiscordNotification: vi.fn().mockResolvedValue(undefined),
   mockJudgeEmailImportance: vi.fn().mockResolvedValue({ important: true, reason: "test" }),
@@ -43,6 +53,14 @@ vi.mock("../../../lib/senderTrustService", () => ({
 vi.mock("../../../lib/gmail", () => ({
   listHistory: mockListHistory,
   getMessage: mockGetMessage,
+  getMessageState: mockGetMessageState,
+  getInboxUnreadCount: mockGetInboxUnreadCount,
+  startWatch: mockStartWatch,
+  isHistoryIdExpired: mockIsHistoryIdExpired,
+}));
+
+vi.mock("../../../lib/emailSync", () => ({
+  reconcileUnreadInbox: mockReconcileUnreadInbox,
 }));
 
 vi.mock("../../../lib/classify", () => ({
@@ -144,6 +162,7 @@ function setupSupabase(opts?: { lastHistoryId?: number | null; existingEmailIds?
       }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
       update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
       insert: vi.fn().mockResolvedValue({ error: null }),
       in: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
@@ -397,6 +416,50 @@ describe("POST /api/webhook/gmail", () => {
     expect(res.status).toBe(200);
     expect(mockGetMessage).not.toHaveBeenCalled();
     expect(mockSendDiscordNotification).not.toHaveBeenCalled();
+  });
+
+  it("既有郵件標籤變更時應更新 labels 與 is_read，不重複通知", async () => {
+    const { chain } = setupSupabase({ lastHistoryId: 50, existingEmailIds: ["msg-state"] });
+    mockListHistory.mockResolvedValue({
+      historyId: "300",
+      messages: [{ messageId: "msg-state", kind: "stateChanged", labelIds: ["UNREAD"] }],
+    });
+    mockGetMessageState.mockResolvedValueOnce({
+      id: "msg-state", threadId: "t-1", labels: ["INBOX"], isRead: true,
+    });
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "300" }));
+
+    expect(res.status).toBe(200);
+    expect(chain.update).toHaveBeenCalledWith({ labels: ["INBOX"], is_read: true });
+    expect(mockGetMessage).not.toHaveBeenCalled();
+    expect(mockSendDiscordNotification).not.toHaveBeenCalled();
+  });
+
+  it("永久刪除事件應移除資料庫郵件", async () => {
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockResolvedValue({
+      historyId: "300",
+      messages: [{ messageId: "msg-deleted", kind: "deleted", labelIds: [] }],
+    });
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "300" }));
+
+    expect(res.status).toBe(200);
+    expect(chain.delete).toHaveBeenCalled();
+    expect(mockGetMessage).not.toHaveBeenCalled();
+  });
+
+  it("historyId 過期時應建立恢復基準並執行分批全量對帳", async () => {
+    setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockRejectedValueOnce({ response: { status: 404 } });
+    mockIsHistoryIdExpired.mockReturnValueOnce(true);
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "300" }));
+
+    expect(res.status).toBe(200);
+    expect(mockStartWatch).toHaveBeenCalled();
+    expect(mockReconcileUnreadInbox).toHaveBeenCalledWith(20, "500");
   });
 
   it("senderAddress 存在時應呼叫 registerFirstSender", async () => {

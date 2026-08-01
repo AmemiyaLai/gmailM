@@ -1,0 +1,46 @@
+---
+import SenderJumpNav from "./SenderJumpNav.astro";
+import type { SenderJumpItem } from "../lib/emailDisplayGroups";
+
+export interface Props {
+  items: SenderJumpItem[];
+  topTargetId?: string;
+}
+
+const {
+  items,
+  topTargetId = "email-page-top",
+} = Astro.props;
+---
+
+<div class="email-list-shell" class:list={{ "email-list-shell--has-nav": items.length > 0 }}>
+  <div class="email-list-shell-main">
+    <span id={topTargetId} class="email-list-top-anchor" aria-hidden="true"></span>
+    <slot />
+  </div>
+  <SenderJumpNav items={items} topTargetId={topTargetId} />
+</div>
+
+<style>
+  .email-list-shell {
+    display: block;
+  }
+
+  .email-list-shell-main {
+    min-width: 0;
+  }
+
+  .email-list-top-anchor,
+  :global(.sender-jump-target) {
+    scroll-margin-top: var(--space-6);
+  }
+
+  @media (min-width: 1200px) {
+    .email-list-shell--has-nav {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 220px;
+      align-items: start;
+      gap: var(--space-5);
+    }
+  }
+</style>

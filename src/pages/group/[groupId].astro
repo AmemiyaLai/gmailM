@@ -1,10 +1,11 @@
 ---
 import SidebarLayout from "../../layouts/SidebarLayout.astro";
 import EmailCard from "../../components/EmailCard.astro";
+import EmailListShell from "../../components/EmailListShell.astro";
 import { SENDER_GROUPS, findSenderGroup } from "../../lib/senderGroups";
 import { listEmailsByGroup } from "../../lib/emailQueries";
 import { extractSenderName } from "../../lib/senderUtils";
-import { partitionEmailsBySender } from "../../lib/emailDisplayGroups";
+import { buildSenderJumpItems, partitionEmailsBySender } from "../../lib/emailDisplayGroups";
 
 const { groupId } = Astro.params as { groupId: string };
 const PAGE_SIZE = 50;
@@ -32,6 +33,12 @@ const emails = senderFilter
   : rawEmails;
 
 const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
+const displayedEmails = [
+  ...collapsibleGroups.flatMap((senderGroup) => senderGroup.emails),
+  ...standaloneEmails,
+];
+const senderJumpItems = buildSenderJumpItems(displayedEmails);
+const senderJumpIdBySender = new Map(senderJumpItems.map((item) => [item.sender, item.id]));
 
 const pageTitle = `${group.label} — 未讀郵件`;
 
@@ -41,6 +48,7 @@ function buildPageHref(p: number): string {
 ---
 
 <SidebarLayout title={`${pageTitle} — Gmail 即時監控面板`} activeView="unread">
+  <EmailListShell items={senderJumpItems}>
   <!-- 頁面標題 + 麵包屑 -->
   <div class="group-breadcrumb">
     <a href="/" class="breadcrumb-link">首頁</a>
@@ -63,9 +71,9 @@ function buildPageHref(p: number): string {
   )}
 
   <!-- 郵件折疊清單 -->
-  <div id="email-list" data-unread-only="true" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
+  <div id="email-list" class="email-list-scroll" data-unread-only="true" style="border:1px solid var(--color-border); border-radius:var(--radius-md);">
     {collapsibleGroups.map((g, i) => (
-      <details class="sender-group" open={i === 0} data-sender={g.sender}>
+      <details id={senderJumpIdBySender.get(g.sender)} class="sender-group sender-jump-target" open={i === 0} data-sender={g.sender}>
           <summary class="sender-group-header">
             <span class="sender-group-toggle"></span>
             <input type="checkbox" class="group-select-all" aria-label={`全選 ${g.sender}`} />
@@ -93,17 +101,19 @@ function buildPageHref(p: number): string {
     ))}
 
     {standaloneEmails.map((email) => (
-      <EmailCard
-        id={email.id}
-        sender={email.sender}
-        subject={email.subject}
-        snippet={email.snippet}
-        receivedAt={email.received_at}
-        isRead={email.is_read}
-        category={email.category}
-        isImportant={email.is_important}
-        isStarred={email.is_starred}
-      />
+      <div id={senderJumpIdBySender.get(email.sender)} class="sender-jump-target">
+        <EmailCard
+          id={email.id}
+          sender={email.sender}
+          subject={email.subject}
+          snippet={email.snippet}
+          receivedAt={email.received_at}
+          isRead={email.is_read}
+          category={email.category}
+          isImportant={email.is_important}
+          isStarred={email.is_starred}
+        />
+      </div>
     ))}
 
     {emails.length === 0 && (
@@ -121,6 +131,7 @@ function buildPageHref(p: number): string {
     ) : <span />}
     {hasMore && <a href={buildPageHref(page + 1)} class="btn btn-outline">下一頁</a>}
   </div>
+  </EmailListShell>
 
   <style>
     /* 麵包屑 */

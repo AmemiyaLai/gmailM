@@ -3,14 +3,14 @@ import { categoryBadge } from "../lib/categoryBadge";
 import { categories } from "../lib/classify";
 
 export interface Props {
-  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics" | "cleanup" | "inbound";
+  activeView?: "home" | "all" | "unread" | "important" | "search" | "summaries" | "senders" | "first-senders" | "analytics" | "cleanup" | "reviews" | "inbound";
   activeCategory?: string | null;
 }
 
 const { activeView = null, activeCategory = null } = Astro.props;
 ---
 
-<aside class="app-sidebar">
+<aside id="app-sidebar" class="app-sidebar" aria-label="側邊導覽">
   <div class="sidebar-header">
     <button
       id="sidebar-toggle"
@@ -24,6 +24,15 @@ const { activeView = null, activeCategory = null } = Astro.props;
       <span class="material-symbols-rounded sidebar-toggle-icon" aria-hidden="true">
         left_panel_close
       </span>
+    </button>
+    <strong class="mobile-sidebar-title">功能選單</strong>
+    <button
+      id="mobile-sidebar-close"
+      class="mobile-sidebar-close"
+      type="button"
+      aria-label="關閉側邊欄"
+    >
+      <span class="material-symbols-rounded" aria-hidden="true">close</span>
     </button>
   </div>
 
@@ -90,11 +99,23 @@ const { activeView = null, activeCategory = null } = Astro.props;
         <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">delete_sweep</span>
         <span class="sidebar-label">關鍵字清理</span>
       </a>
+      <a href="/reviews" class:list={["sidebar-link", { active: activeView === "reviews" }]} aria-label="待審核" title="待審核">
+        <span class="material-symbols-rounded sidebar-icon" aria-hidden="true">fact_check</span>
+        <span class="sidebar-label">待審核</span>
+      </a>
     </div>
   </nav>
 </aside>
+<button id="mobile-sidebar-backdrop" class="mobile-sidebar-backdrop" type="button" aria-label="關閉側邊欄"></button>
 
 <script>
+  const closeMobileSidebar = (restoreFocus = false) => {
+    document.documentElement.classList.remove("mobile-sidebar-open");
+    const trigger = document.querySelector<HTMLButtonElement>("#mobile-sidebar-toggle");
+    trigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger?.focus();
+  };
+
   const initializeSidebarToggle = () => {
     const toggle = document.querySelector<HTMLButtonElement>("#sidebar-toggle");
     if (!toggle || toggle.dataset.initialized === "true") return;
@@ -117,9 +138,31 @@ const { activeView = null, activeCategory = null } = Astro.props;
       localStorage.setItem("sidebar-collapsed", String(collapsed));
     });
     toggle.dataset.initialized = "true";
+
+    const mobileClose = document.querySelector<HTMLButtonElement>("#mobile-sidebar-close");
+    const backdrop = document.querySelector<HTMLButtonElement>("#mobile-sidebar-backdrop");
+    if (mobileClose?.dataset.initialized !== "true") {
+      mobileClose?.addEventListener("click", () => closeMobileSidebar(true));
+      if (mobileClose) mobileClose.dataset.initialized = "true";
+    }
+    if (backdrop?.dataset.initialized !== "true") {
+      backdrop?.addEventListener("click", () => closeMobileSidebar(true));
+      if (backdrop) backdrop.dataset.initialized = "true";
+    }
+
+    document.querySelectorAll<HTMLAnchorElement>("#sidebar-navigation a").forEach((link) => {
+      if (link.dataset.mobileInitialized === "true") return;
+      link.addEventListener("click", () => closeMobileSidebar());
+      link.dataset.mobileInitialized = "true";
+    });
   };
 
   document.addEventListener("astro:page-load", initializeSidebarToggle);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.documentElement.classList.contains("mobile-sidebar-open")) {
+      closeMobileSidebar(true);
+    }
+  });
   initializeSidebarToggle();
 </script>
 
@@ -156,6 +199,12 @@ const { activeView = null, activeCategory = null } = Astro.props;
 
   .sidebar-toggle-icon {
     font-size: 20px;
+  }
+
+  .mobile-sidebar-title,
+  .mobile-sidebar-close,
+  .mobile-sidebar-backdrop {
+    display: none;
   }
 
   .sidebar-nav {
@@ -240,27 +289,87 @@ const { activeView = null, activeCategory = null } = Astro.props;
 
   @media (max-width: 768px) {
     .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 64px;
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .sidebar-toggle {
       display: none;
+    }
+
+    .mobile-sidebar-title {
+      display: block;
+      font-size: var(--font-size-base);
+    }
+
+    .mobile-sidebar-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: var(--radius-full);
+      background: var(--color-bg-tertiary);
+      color: var(--color-text);
     }
 
     .sidebar-nav {
-      flex-direction: row;
-      overflow-x: auto;
-      padding: var(--space-3) var(--space-4);
-      gap: var(--space-4);
+      flex-direction: column;
+      overflow-x: hidden;
+      overflow-y: auto;
+      gap: var(--space-6);
+      height: calc(100dvh - 64px);
+      padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
+      overscroll-behavior: contain;
     }
 
     .sidebar-section {
-      flex-direction: row;
-      flex-shrink: 0;
+      flex-direction: column;
+      flex-shrink: 1;
     }
 
     .sidebar-heading {
-      display: none;
+      display: block;
     }
 
     .sidebar-link {
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: var(--space-3);
+      min-width: 0;
+      min-height: 46px;
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--font-size-sm);
       white-space: nowrap;
+    }
+
+    .sidebar-icon {
+      width: 20px;
+      height: 20px;
+      font-size: 20px;
+    }
+
+    .sidebar-dot {
+      width: 10px;
+      height: 10px;
+    }
+
+    .mobile-sidebar-backdrop {
+      position: fixed;
+      z-index: 2490;
+      inset: 0;
+      border: 0;
+      background: rgba(0, 0, 0, 0.56);
+      cursor: default;
+    }
+
+    :global(html.mobile-sidebar-open) .mobile-sidebar-backdrop {
+      display: block;
     }
   }
 </style>

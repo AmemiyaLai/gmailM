@@ -8,7 +8,11 @@ const { mockGetSupabase, mockTrashMessage, mockMarkAsRead, mockSendCleanupReview
   mockFindCandidates: vi.fn(),
 }));
 
-vi.mock("../lib/supabase", () => ({ getSupabase: mockGetSupabase }));
+// unwrapQuery 是純邏輯（把 Supabase error 轉成例外），保留真實實作才測得到錯誤傳播
+vi.mock("../lib/supabase", async () => {
+  const actual = await vi.importActual<typeof import("../lib/supabase")>("../lib/supabase");
+  return { getSupabase: mockGetSupabase, unwrapQuery: actual.unwrapQuery, SupabaseQueryError: actual.SupabaseQueryError };
+});
 vi.mock("../lib/gmail", () => ({ trashMessage: mockTrashMessage, markAsRead: mockMarkAsRead }));
 vi.mock("../lib/discord", () => ({ sendCleanupReview: mockSendCleanupReview }));
 vi.mock("../lib/cleanupKeywords", () => ({ findCandidates: mockFindCandidates }));
@@ -16,6 +20,7 @@ vi.mock("../lib/cleanupKeywords", () => ({ findCandidates: mockFindCandidates })
 import {
   approveReview, dispatchCleanupReview, DISPATCH_COOLDOWN_MS, rejectReview,
   getReview, listReviews, resumeStuckReviews, STUCK_REVIEW_THRESHOLD_MS,
+  getPendingReviewCount, listPendingReviews, processCandidatesNow,
 } from "../lib/cleanupReview";
 
 interface ChainCall {
@@ -464,5 +469,174 @@ describe("resumeStuckReviews()", () => {
     expect(result.processed).toBe(1); // 只有 r2 的那一封成功
     consoleSpy.mockRestore();
     consoleWarn.mockRestore();
+  });
+});
+
+describe("查詢失敗時不得靜默降級", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTrashMessage.mockResolvedValue(undefined);
+  });
+
+  const dbError = { data: null, error: { message: "relation \"cleanup_reviews\" does not exist" } };
+
+  /**
+   * 這是本次修正的核心迴歸測試。
+   * 修正前：claimPending 只取 data，查詢失敗 → 回傳 null → approveReview 回報 already-handled，
+   * 使用者看到「已經處理過了」但郵件其實完全沒被處理。
+   */
+  it("claimPending 查詢失敗時 approveReview 應拋出，不得回報 already-handled", async () => {
+    mockSupabase([dbError]);
+
+    await expect(approveReview("review-1")).rejects.toThrow(/claimPending/);
+    expect(mockTrashMessage).not.toHaveBeenCalled();
+  });
+
+  it("claimPending 查詢失敗時 rejectReview 也應拋出", async () => {
+    mockSupabase([dbError]);
+    await expect(rejectReview("review-1")).rejects.toThrow(/claimPending/);
+  });
+
+  it("getReview / listReviews / listPendingReviews 查詢失敗應拋出", async () => {
+    mockSupabase([dbError]);
+    await expect(getReview("review-1")).rejects.toThrow(/getReview/);
+
+    mockSupabase([dbError]);
+    await expect(listReviews()).rejects.toThrow(/listReviews/);
+
+    mockSupabase([dbError]);
+    await expect(listPendingReviews()).rejects.toThrow(/listPendingReviews/);
+  });
+
+  it("resumeStuckReviews 查詢失敗應拋出而非當作沒有卡住的審核單", async () => {
+    mockSupabase([dbError]);
+    await expect(resumeStuckReviews()).rejects.toThrow(/resumeStuckReviews/);
+  });
+
+  it("processed_count 寫入失敗時不應改寫回傳結果，但要留下錯誤記錄", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockSupabase([
+      { data: [pendingReview()], error: null }, // claimPending
+      { data: null, error: null }, // emails delete
+      { data: null, error: { message: "write timeout" } }, // 回寫 processed_count 失敗
+    ]);
+
+    // Gmail 動作已完成，仍要如實回報成功封數
+    const result = await approveReview("review-1");
+    expect(result).toEqual({ status: "approved", action: "trash", processedCount: 2, failedCount: 0 });
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("寫入 processed_count 失敗"),
+      "write timeout",
+    );
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("getPendingReviewCount()", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("應回傳審核單數與郵件數加總", async () => {
+    const { calls } = mockSupabase([
+      { data: [{ email_count: 25 }, { email_count: 7 }], error: null },
+    ]);
+
+    expect(await getPendingReviewCount()).toEqual({ reviews: 2, emails: 32 });
+    expect(calls[0].chain.eq).toHaveBeenCalledWith("status", "pending");
+  });
+
+  it("沒有 pending 時應回傳 0", async () => {
+    mockSupabase([{ data: [], error: null }]);
+    expect(await getPendingReviewCount()).toEqual({ reviews: 0, emails: 0 });
+  });
+
+  it("email_count 為 null 時應視為 0 而非 NaN", async () => {
+    mockSupabase([{ data: [{ email_count: null }, { email_count: 3 }], error: null }]);
+    expect(await getPendingReviewCount()).toEqual({ reviews: 2, emails: 3 });
+  });
+});
+
+describe("listPendingReviews()", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("應只查 pending 狀態", async () => {
+    const { calls } = mockSupabase([{ data: [pendingReview()], error: null }]);
+
+    const rows = await listPendingReviews(10);
+
+    expect(rows).toHaveLength(1);
+    expect(calls[0].chain.eq).toHaveBeenCalledWith("status", "pending");
+    expect(calls[0].chain.limit).toHaveBeenCalledWith(10);
+  });
+});
+
+describe("processCandidatesNow()", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTrashMessage.mockResolvedValue(undefined);
+    mockMarkAsRead.mockResolvedValue(undefined);
+  });
+
+  it("沒有候選時應跳過且不建立審核單", async () => {
+    mockFindCandidates.mockResolvedValue([]);
+    mockSupabase([]);
+
+    expect(await processCandidatesNow("trash")).toEqual({ status: "skipped", reason: "no matching emails" });
+    expect(mockTrashMessage).not.toHaveBeenCalled();
+  });
+
+  it("應建立審核單並立即執行，且不經 Discord", async () => {
+    mockFindCandidates.mockResolvedValue([
+      { email: { id: "m1", sender: "a@x.com", subject: "優惠", snippet: "" }, keyword: "優惠" },
+      { email: { id: "m2", sender: "b@x.com", subject: "優惠二", snippet: "" }, keyword: "優惠" },
+    ]);
+    mockSupabase([
+      { data: pendingReview(), error: null }, // createPendingReview insert…single
+      { data: [pendingReview({ status: "approved" })], error: null }, // claimPending
+      { data: null, error: null }, // emails delete
+      { data: null, error: null }, // 回寫 processed_count
+    ]);
+
+    const result = await processCandidatesNow("trash");
+
+    expect(result).toEqual({
+      status: "ok",
+      action: "trash",
+      reviewId: "review-1",
+      processedCount: 2,
+      failedCount: 0,
+    });
+    expect(mockTrashMessage).toHaveBeenCalledTimes(2);
+    expect(mockSendCleanupReview).not.toHaveBeenCalled();
+  });
+
+  it("read 動作應標記已讀而非刪除", async () => {
+    mockFindCandidates.mockResolvedValue([
+      { email: { id: "m1", sender: "a@x.com", subject: "對帳單", snippet: "" }, keyword: "對帳單" },
+    ]);
+    mockSupabase([
+      { data: pendingReview({ action: "read" }), error: null },
+      { data: [pendingReview({ action: "read", status: "approved" })], error: null },
+      { data: null, error: null },
+      { data: null, error: null },
+    ]);
+
+    const result = await processCandidatesNow("read");
+
+    expect(result).toMatchObject({ status: "ok", action: "read" });
+    expect(mockMarkAsRead).toHaveBeenCalled();
+    expect(mockTrashMessage).not.toHaveBeenCalled();
+  });
+
+  it("搶佔失敗（剛被別的入口處理掉）時應跳過", async () => {
+    mockFindCandidates.mockResolvedValue([
+      { email: { id: "m1", sender: "a@x.com", subject: "優惠", snippet: "" }, keyword: "優惠" },
+    ]);
+    mockSupabase([
+      { data: pendingReview(), error: null }, // createPendingReview
+      { data: [], error: null }, // claimPending 搶不到
+    ]);
+
+    expect(await processCandidatesNow("trash")).toEqual({ status: "skipped", reason: "already handled" });
+    expect(mockTrashMessage).not.toHaveBeenCalled();
   });
 });

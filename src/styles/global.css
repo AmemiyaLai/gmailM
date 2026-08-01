@@ -413,16 +413,84 @@ pre code {
 
 @media (max-width: 768px) {
   .app-shell {
-    flex-direction: column;
+    display: block;
     min-height: 0;
   }
 
   .app-sidebar {
-    width: 100%;
-    height: auto;
-    position: static;
+    position: fixed;
+    z-index: 2500;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(84vw, 320px);
+    height: 100dvh;
     border-right: none;
-    border-bottom: 1px solid var(--color-border-subtle);
+    border-top: none;
+    border-bottom: none;
+    box-shadow: var(--shadow-xl);
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base), visibility var(--transition-base);
+  }
+
+  html.mobile-sidebar-open .app-sidebar {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  html.mobile-sidebar-open body {
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 640px) {
+  .container,
+  .container-sm,
+  .container-md,
+  .container-lg {
+    padding-inline: var(--space-3);
+  }
+
+  .app-main main.container {
+    padding-top: var(--space-4) !important;
+    padding-bottom: var(--space-8) !important;
+  }
+
+  .app-main main h1:not(.sr-only) {
+    font-size: var(--font-size-xl) !important;
+    margin-bottom: var(--space-4) !important;
+  }
+
+  .sender-group-header {
+    min-height: 46px;
+    padding-block: var(--space-3) !important;
+  }
+
+  .email-list-scroll {
+    width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: var(--space-1);
+    overscroll-behavior-inline: contain;
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .email-list-scroll > .sender-group,
+  .email-list-scroll > .sender-jump-target,
+  .email-list-scroll > .email-row {
+    min-width: 860px;
+  }
+
+  .email-list-scroll::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .email-list-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-primary);
   }
 }
 

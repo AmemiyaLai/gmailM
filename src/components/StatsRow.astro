@@ -2,27 +2,41 @@
 import StatCard from "./StatCard.astro";
 import CategoryCard from "./CategoryCard.astro";
 import ImportantEmailCard from "./ImportantEmailCard.astro";
-import type { DashboardStatTrends, EmailPreview } from "../lib/emailQueries";
+import type { DashboardStatTrends, EmailPreview, GmailUnreadStatus } from "../lib/emailQueries";
 
 export interface Props {
   unreadCount: number;
+  unreadStatus: GmailUnreadStatus;
   todayCount: number;
+  /** pending 審核單涵蓋的郵件數（等使用者決定的），不含尚未送審的候選 */
+  pendingReviewEmails: number;
   categoryCounts: { category: string; count: number }[];
   importantEmails: EmailPreview[];
   trends: DashboardStatTrends;
 }
 
-const { unreadCount, todayCount, categoryCounts, importantEmails, trends } = Astro.props;
+const { unreadCount, unreadStatus, todayCount, pendingReviewEmails, categoryCounts, importantEmails, trends } = Astro.props;
 ---
 
 <div style="margin-bottom:var(--space-8);">
   <div class="stats-grid">
-    <StatCard label="未讀郵件" value={unreadCount} href="/unread" accent="primary" trend={trends.unread} />
+    <StatCard label="未讀討論串" value={unreadCount} href="/unread" accent="primary" trend={trends.unread} />
     <StatCard label="今日郵件" value={todayCount} accent="info" trend={trends.today} />
+    {/* 趨勢資料來自 dashboard_stat_snapshots，尚未納入待審核，故不傳 trend */}
+    <StatCard label="待審核" value={pendingReviewEmails} href="/reviews" accent="warning" />
     {categoryCounts.map(({ category, count }) => (
       <CategoryCard category={category} count={count} trend={trends.categories[category]} />
     ))}
   </div>
+  {unreadStatus.source !== "gmail" && (
+    <p class="sync-fallback" role="status">
+      Gmail 暫時無法連線，未讀數使用{
+        unreadStatus.source === "cache" && unreadStatus.updatedAt
+          ? ` ${new Date(unreadStatus.updatedAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 的同步快取`
+          : "資料庫對帳結果"
+      }。
+    </p>
+  )}
 
   {importantEmails.length > 0 && (
     <div style="margin-top:var(--space-6);">
@@ -55,5 +69,11 @@ const { unreadCount, todayCount, categoryCounts, importantEmails, trends } = Ast
     gap: var(--space-3);
     overflow-x: auto;
     padding-bottom: var(--space-2);
+  }
+
+  .sync-fallback {
+    margin: var(--space-2) 0 0;
+    color: var(--color-warning);
+    font-size: var(--font-size-sm);
   }
 </style>

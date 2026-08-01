@@ -237,7 +237,7 @@ describe("sendDiscordSummary()", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.embeds[0].title).toBe("📬 每小時未讀郵件摘要");
     expect(body.embeds[0].description).toBe("重要的摘要文字");
-    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "未讀郵件數").value).toBe("12");
+    expect(body.embeds[0].fields.find((f: { name: string }) => f.name === "未讀討論串數").value).toBe("12");
   });
 
   it("DISCORD_WEBHOOK_URL 為空時應直接返回不發送", async () => {
@@ -519,4 +519,3 @@ describe("sendFirstSenderDigestNotification()", () => {
     await expect(sendFirstSenderDigestNotification([entry(1)])).rejects.toThrow("DISCORD_WEBHOOK_URL");
   });
 });
-

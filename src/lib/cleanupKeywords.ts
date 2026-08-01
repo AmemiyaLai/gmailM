@@ -1,4 +1,4 @@
-import { getSupabase } from "./supabase";
+import { getSupabase, unwrapQuery } from "./supabase";
 
 /**
  * 使用者自訂的清理關鍵字（cleanup_keywords，見 supabase/migrations/0007_cleanup_keywords.sql）。
@@ -110,11 +110,11 @@ const MATCH_COLUMNS = "id, sender, subject, snippet, received_at";
 
 export async function listKeywords(): Promise<CleanupKeyword[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_keywords" as never)
     .select(KEYWORD_COLUMNS)
     .order("created_at", { ascending: true });
-  return (data ?? []) as CleanupKeyword[];
+  return (unwrapQuery(result, "listKeywords") ?? []) as CleanupKeyword[];
 }
 
 export async function addKeyword(keyword: string, field: CleanupField, action: CleanupAction): Promise<CleanupKeyword> {
@@ -158,25 +158,31 @@ function sinceIso(days: number): string {
  */
 async function fetchRecentEmails(days: number, cap = 1000): Promise<MatchableEmail[]> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("emails" as never)
     .select(MATCH_COLUMNS)
     .gte("received_at", sinceIso(days))
     .order("received_at", { ascending: false })
     .limit(cap);
-  return (data ?? []) as MatchableEmail[];
+  return (unwrapQuery(result, "fetchRecentEmails") ?? []) as MatchableEmail[];
 }
 
-/** 已在 pending / approved 審核單中的郵件 id，避免重複送審（跨 action 共用一份，同一封信不會同時被兩種審核卡住） */
+/**
+ * 已在 pending / approved 審核單中的郵件 id，避免重複送審
+ * （跨 action 共用一份，同一封信不會同時被兩種審核卡住）。
+ *
+ * 這支查詢失敗時必須拋出：靜默回傳空 Set 會讓已在審核中的郵件被重複送審。
+ */
 async function idsUnderReview(): Promise<Set<string>> {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const result = await supabase
     .from("cleanup_reviews" as never)
     .select("email_ids")
     .in("status", ["pending", "approved"]);
 
+  const rows = (unwrapQuery(result, "idsUnderReview") ?? []) as { email_ids: string[] | null }[];
   const ids = new Set<string>();
-  for (const row of (data ?? []) as { email_ids: string[] | null }[]) {
+  for (const row of rows) {
     for (const id of row.email_ids ?? []) ids.add(id);
   }
   return ids;

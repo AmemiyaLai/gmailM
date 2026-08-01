@@ -5,6 +5,7 @@ const mockGet = vi.fn();
 const mockModify = vi.fn();
 const mockTrash = vi.fn();
 const mockWatch = vi.fn();
+const mockLabelGet = vi.fn();
 
 vi.mock("googleapis", () => ({
   google: {
@@ -24,6 +25,9 @@ vi.mock("googleapis", () => ({
         watch: mockWatch,
         history: {
           list: mockList,
+        },
+        labels: {
+          get: mockLabelGet,
         },
       },
     })),
@@ -47,6 +51,10 @@ import {
   trashMessage,
   startWatch,
   listHistory,
+  getInboxUnreadCount,
+  getMessageState,
+  listUnreadInboxMessages,
+  isHistoryIdExpired,
 } from "../lib/gmail";
 
 describe("gmail.ts", () => {
@@ -458,8 +466,8 @@ describe("gmail.ts", () => {
       const result = await listHistory("100");
       expect(result.historyId).toBe("999");
       expect(result.messages).toEqual([
-        { messageId: "msg-1" },
-        { messageId: "msg-2" },
+        { messageId: "msg-1", kind: "added", labelIds: [] },
+        { messageId: "msg-2", kind: "added", labelIds: [] },
       ]);
     });
 
@@ -514,7 +522,58 @@ describe("gmail.ts", () => {
       });
 
       const result = await listHistory("100");
-      expect(result.messages).toEqual([{ messageId: "msg-1" }]);
+      expect(result.messages).toEqual([{ messageId: "msg-1", kind: "added", labelIds: [] }]);
+    });
+
+    it("應收集標籤變更與刪除事件，並以刪除事件去重", async () => {
+      mockList.mockResolvedValue({
+        data: {
+          historyId: "200",
+          history: [{
+            labelsAdded: [{ message: { id: "msg-1" }, labelIds: ["UNREAD"] }],
+            labelsRemoved: [{ message: { id: "msg-2" }, labelIds: ["INBOX"] }],
+            messagesDeleted: [{ message: { id: "msg-1" } }],
+          }],
+        },
+      });
+      const result = await listHistory("100");
+      expect(result.messages).toEqual([
+        { messageId: "msg-1", kind: "deleted", labelIds: [] },
+        { messageId: "msg-2", kind: "stateChanged", labelIds: ["INBOX"] },
+      ]);
+      expect(mockList).toHaveBeenCalledWith(expect.not.objectContaining({ historyTypes: expect.anything() }));
+    });
+  });
+
+  describe("Gmail unread state", () => {
+    it("應讀取 INBOX threadsUnread", async () => {
+      mockLabelGet.mockResolvedValue({ data: { threadsUnread: 12 } });
+      await expect(getInboxUnreadCount()).resolves.toBe(12);
+      expect(mockLabelGet).toHaveBeenCalledWith({ userId: "me", id: "INBOX" });
+    });
+
+    it("應以 metadata 取得郵件標籤狀態", async () => {
+      mockGet.mockResolvedValue({
+        data: { id: "m1", threadId: "t1", labelIds: ["INBOX", "UNREAD"] },
+      });
+      await expect(getMessageState("m1")).resolves.toEqual({
+        id: "m1", threadId: "t1", labels: ["INBOX", "UNREAD"], isRead: false,
+      });
+    });
+
+    it("應分頁列出所有未讀收件匣郵件", async () => {
+      mockList
+        .mockResolvedValueOnce({ data: { messages: [{ id: "m1", threadId: "t1" }], nextPageToken: "p2" } })
+        .mockResolvedValueOnce({ data: { messages: [{ id: "m2", threadId: "t2" }] } });
+      await expect(listUnreadInboxMessages()).resolves.toEqual([
+        { id: "m1", threadId: "t1" },
+        { id: "m2", threadId: "t2" },
+      ]);
+    });
+
+    it("應辨識 historyId 過期的 404", () => {
+      expect(isHistoryIdExpired({ response: { status: 404 } })).toBe(true);
+      expect(isHistoryIdExpired(new Error("network"))).toBe(false);
     });
   });
 });

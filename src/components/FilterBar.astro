@@ -80,6 +80,10 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
       ))}
     </select>
 
+    <button type="submit" class="filter-apply">
+      <span class="material-symbols-rounded" aria-hidden="true">filter_alt</span>
+      套用
+    </button>
   </div>
 </form>
 
@@ -146,9 +150,11 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
 
   .chip-trigger,
   .chip-toggle,
-  .chip-select {
+  .chip-select,
+  .filter-apply {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--space-1);
     padding: var(--space-2) var(--space-4);
     border-radius: var(--radius-full);
@@ -158,6 +164,17 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
     font-size: var(--font-size-sm);
     cursor: pointer;
     white-space: nowrap;
+  }
+
+  .filter-apply {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: white;
+    font-weight: var(--font-weight-medium);
+  }
+
+  .filter-apply .material-symbols-rounded {
+    font-size: 17px;
   }
 
   .chip-toggle {
@@ -201,5 +218,54 @@ const dateRangeLabel = from && to ? `${from} ～ ${to}` : from ? `${from} 起` :
   .chip-field-label {
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
+  }
+
+  @media (max-width: 640px) {
+    .filter-bar {
+      margin-bottom: var(--space-4);
+    }
+
+    .filter-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+
+    .filter-chip,
+    .chip-trigger,
+    .chip-toggle,
+    .chip-select,
+    .filter-apply {
+      width: 100%;
+      min-width: 0;
+      min-height: 42px;
+    }
+
+    .chip-trigger,
+    .chip-toggle,
+    .chip-select {
+      overflow: hidden;
+      padding-inline: var(--space-3);
+      text-overflow: ellipsis;
+    }
+
+    .chip-popover {
+      position: fixed;
+      z-index: 2200;
+      top: 50%;
+      left: var(--space-3);
+      right: var(--space-3);
+      width: auto;
+      min-width: 0;
+      padding: var(--space-4);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-xl);
+      transform: translateY(-50%);
+    }
+
+    .chip-popover input {
+      min-height: 44px;
+      font-size: 16px;
+    }
   }
 </style>

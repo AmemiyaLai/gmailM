@@ -13,7 +13,7 @@ function getClient(): GoogleGenAI {
   return client;
 }
 
-const MODEL = import.meta.env.GEMINI_MODEL || "gemini-flash-latest";
+const MODEL = import.meta.env.GEMINI_MODEL || "gemini-3.5-flash";
 
 export interface UnreadEmailInput {
   sender: string;
@@ -42,7 +42,7 @@ export async function summarizeUnreadEmails(emails: UnreadEmailInput[]): Promise
     )
     .join("\n");
 
-  const prompt = `你是一位郵件助理，以下是使用者目前尚未讀取的 ${emails.length} 封郵件清單（每筆開頭 [MM/DD HH:mm] 是收件日期時間，時區為台北時間）：
+  const prompt = `你是一位郵件助理，以下是使用者目前 ${emails.length} 個未讀收件匣討論串的代表郵件（每串取最新未讀信；每筆開頭 [MM/DD HH:mm] 是收件日期時間，時區為台北時間）：
 ${list}
 
 請用繁體中文條列出重點摘要（依重要性/主題分組即可），**每一點摘要的最前面都必須標註該封信對應的收件日期與時間，格式為「[MM/DD HH:mm]」**，讓使用者能一眼判斷該事項的緊急程度。控制在 300 字以內，語氣精簡、適合放進 Discord 通知訊息。不要加入 markdown 標題語法，只需條列文字。`;

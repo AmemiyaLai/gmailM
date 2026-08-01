@@ -1,0 +1,195 @@
+---
+import SidebarLayout from "../layouts/SidebarLayout.astro";
+import { cleanupActionLabels, findCandidates, type CleanupAction, type CleanupMatch } from "../lib/cleanupKeywords";
+import { listPendingReviews, type CleanupReviewRow } from "../lib/cleanupReview";
+
+/**
+ * 兩區內容：
+ * 1. 待你決定 —— 已送審但還沒按過按鈕的 pending 審核單（與 Discord 上待處理的是同一份）
+ * 2. 尚未送審的候選 —— 命中關鍵字但還沒排入審核單，可直接處理不必等排程
+ *
+ * 清理相關的查詢現在會在失敗時拋出（見 lib/supabase.unwrapQuery），
+ * 這裡接住並顯示明確錯誤，避免像過去一樣把「資料表不存在」偽裝成「沒有待審核項目」。
+ */
+let pendingReviews: CleanupReviewRow[] = [];
+let trashCandidates: CleanupMatch[] = [];
+let readCandidates: CleanupMatch[] = [];
+let loadError: string | null = null;
+
+try {
+  [pendingReviews, trashCandidates, readCandidates] = await Promise.all([
+    listPendingReviews(50),
+    findCandidates("trash"),
+    findCandidates("read"),
+  ]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+}
+
+const actionBadgeColor: Record<CleanupAction, string> = {
+  trash: "var(--color-error)",
+  read: "var(--color-primary-hover)",
+};
+
+const actionIcon: Record<CleanupAction, string> = {
+  trash: "🗑️",
+  read: "📩",
+};
+
+const pendingEmailTotal = pendingReviews.reduce((sum, r) => sum + (r.email_count ?? 0), 0);
+
+const candidateGroups: { action: CleanupAction; matches: CleanupMatch[] }[] = [
+  { action: "trash", matches: trashCandidates },
+  { action: "read", matches: readCandidates },
+];
+const candidateTotal = trashCandidates.length + readCandidates.length;
+---
+
+<SidebarLayout title="待審核 — Gmail 即時監控面板" activeView="reviews">
+  <div id="review-root">
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-2);">待審核</h1>
+    <p style="font-size:var(--font-size-sm); color:var(--color-text-tertiary); margin-bottom:var(--space-4);">
+      這裡與 Discord 上的審核訊息是同一份待辦清單，兩邊都能處理、不會重複執行。
+      刪除的郵件會移到 Gmail 垃圾桶（30 天內可復原），標記已讀不會刪除郵件。
+    </p>
+
+    <div id="review-status" style="margin-bottom:var(--space-4); font-size:var(--font-size-sm); color:var(--color-text-tertiary);"></div>
+
+    {loadError && (
+      <div
+        class="card"
+        style="padding:var(--space-4); margin-bottom:var(--space-6); border-left:3px solid var(--color-error);"
+      >
+        <strong style="color:var(--color-error);">查詢失敗</strong>
+        <p style="margin-top:var(--space-2); font-size:var(--font-size-sm); color:var(--color-text-secondary);">
+          {loadError}
+        </p>
+        <p style="margin-top:var(--space-2); font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+          若訊息提到資料表不存在，請在 Supabase SQL Editor 執行 <code>scripts/sql/apply-0007-0010.sql</code>。
+        </p>
+      </div>
+    )}
+
+    {!loadError && (
+      <>
+        <!-- 區塊一：待你決定 -->
+        <section style="margin-bottom:var(--space-8);">
+          <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-1);">
+            待你決定（{pendingReviews.length} 則／{pendingEmailTotal} 封）
+          </h2>
+          <p style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-3);">
+            已送出審核訊息、等待確認的批次。首頁「待審核」統計卡顯示的就是這裡的郵件總數。
+          </p>
+
+          {pendingReviews.length === 0 && (
+            <div style="text-align:center; padding:var(--space-8) 0; color:var(--color-text-tertiary); font-size:var(--font-size-sm);">
+              目前沒有待審核的項目。
+            </div>
+          )}
+
+          <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+            {pendingReviews.map((r) => (
+              <div class="card" data-review-id={r.id} style="padding:var(--space-4);">
+                <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-3);">
+                  <span class="badge" style={`background:var(--color-bg-tertiary); color:${actionBadgeColor[r.action]};`}>
+                    {actionIcon[r.action]} {cleanupActionLabels[r.action]}
+                  </span>
+                  <span style="font-size:var(--font-size-sm);">{r.email_count} 封郵件</span>
+                  {r.discord_message_id === null && (
+                    <span style="font-size:var(--font-size-xs); color:var(--color-text-tertiary);">（未送到 Discord）</span>
+                  )}
+                  <time datetime={r.created_at} style="margin-left:auto; font-size:var(--font-size-xs); color:var(--color-text-tertiary);">
+                    {new Date(r.created_at).toLocaleString("zh-TW")}
+                  </time>
+                </div>
+
+                <ul style="display:flex; flex-direction:column; gap:var(--space-2); margin-bottom:var(--space-3);">
+                  {(r.matched ?? []).map((m) => (
+                    <li style="font-size:var(--font-size-xs); line-height:1.5;">
+                      <div style="color:var(--color-text);">{m.subject || "(無主旨)"}</div>
+                      <div style="color:var(--color-text-tertiary);">
+                        {m.sender || "(未知)"}　🔑 <code>{m.keyword}</code>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                <div style="display:flex; gap:var(--space-2);">
+                  <button type="button" class="btn btn-primary" data-action="decide" data-decision="approve">
+                    ✅ 確認{r.action === "trash" ? "刪除" : "標記已讀"}
+                  </button>
+                  <button type="button" class="btn btn-outline" data-action="decide" data-decision="reject">
+                    ❌ 取消
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <!-- 區塊二：尚未送審的候選 -->
+        <section>
+          <h2 style="font-size:var(--font-size-lg); margin-bottom:var(--space-1);">
+            尚未送審的候選（{candidateTotal} 封）
+          </h2>
+          <p style="font-size:var(--font-size-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-3);">
+            命中關鍵字但還沒排入審核單。排程會在每天 07:00 與 19:00 自動送到 Discord，單次最多 25 封；
+            你也可以在這裡直接處理，不必等排程。
+          </p>
+
+          {candidateTotal === 0 && (
+            <div style="text-align:center; padding:var(--space-8) 0; color:var(--color-text-tertiary); font-size:var(--font-size-sm);">
+              目前沒有命中關鍵字的新郵件。
+            </div>
+          )}
+
+          <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+            {candidateGroups.filter((g) => g.matches.length > 0).map((g) => (
+              <div class="card" style="padding:var(--space-4);">
+                <div style="display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-3);">
+                  <span class="badge" style={`background:var(--color-bg-tertiary); color:${actionBadgeColor[g.action]};`}>
+                    {actionIcon[g.action]} {cleanupActionLabels[g.action]}
+                  </span>
+                  <span style="font-size:var(--font-size-sm);">{g.matches.length} 封</span>
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    data-action="process-now"
+                    data-cleanup-action={g.action}
+                    style="margin-left:auto;"
+                  >
+                    ✅ 直接處理這 {g.matches.length} 封
+                  </button>
+                </div>
+
+                <ul style="display:flex; flex-direction:column; gap:var(--space-2);">
+                  {g.matches.map(({ email, keyword }) => (
+                    <li style="font-size:var(--font-size-xs); line-height:1.5;">
+                      <div style="color:var(--color-text);">{email.subject || "(無主旨)"}</div>
+                      <div style="color:var(--color-text-tertiary);">
+                        {email.sender || "(未知)"}　🔑 <code>{keyword}</code>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      </>
+    )}
+  </div>
+
+  <script>
+    import { initReviewList } from "../lib/reviewListClient";
+
+    const setup = () => {
+      if (window.location.pathname !== "/reviews") return;
+      const root = document.querySelector<HTMLElement>("#review-root");
+      if (root) initReviewList(root);
+    };
+
+    document.addEventListener("astro:page-load", setup);
+    setup();
+  </script>
+</SidebarLayout>

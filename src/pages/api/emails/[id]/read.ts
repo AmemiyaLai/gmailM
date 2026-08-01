@@ -18,19 +18,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     // 若 body 無法解析或無 read 欄位，預設 true（向後相容）
   }
 
-  const supabase = getSupabase();
-  const { error } = await supabase
-    .from("emails" as never)
-    .update({ is_read: read } as never)
-    .eq("id", id);
-
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   try {
     if (read) {
       await markAsRead(id);
@@ -41,12 +28,25 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     console.error(`Failed to sync read status to Gmail for ${id}:`, err);
     return new Response(
       JSON.stringify({
-        status: "recorded",
+        status: "failed",
         gmailSync: "failed",
         gmailError: err instanceof Error ? err.message : String(err),
       }),
-      { status: 207, headers: { "Content-Type": "application/json" } },
+      { status: 502, headers: { "Content-Type": "application/json" } },
     );
+  }
+
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from("emails" as never)
+    .update({ is_read: read } as never)
+    .eq("id", id);
+
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message, gmailSync: "ok" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   return new Response(

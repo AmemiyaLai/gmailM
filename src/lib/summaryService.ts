@@ -55,9 +55,8 @@ export async function generateUnreadSummary(
   const supabase = getSupabase();
 
   const { data, error } = (await supabase
-    .from("emails" as never)
+    .from("unread_inbox_threads" as never)
     .select("sender, subject, snippet, category, received_at")
-    .eq("is_read", false)
     .order("received_at", { ascending: true })) as {
     data: UnreadEmailRow[] | null;
     error: unknown;

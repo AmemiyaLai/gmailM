@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
-  mockSyncEmailsFromGmail, mockSummarizeUnreadEmails, mockSendDiscordSummary, mockGetSupabase,
+  mockSyncEmailsFromGmail, mockReconcileUnreadInbox, mockSummarizeUnreadEmails, mockSendDiscordSummary, mockGetSupabase,
 } = vi.hoisted(() => ({
   mockSyncEmailsFromGmail: vi.fn().mockResolvedValue({ imported: 5, failed: 0 }),
+  mockReconcileUnreadInbox: vi.fn().mockResolvedValue({
+    gmailThreadsUnread: 5, reconciled: 0, remaining: 0, failed: 0, completed: true,
+  }),
   mockSummarizeUnreadEmails: vi.fn().mockResolvedValue("AI 摘要內容"),
   mockSendDiscordSummary: vi.fn().mockResolvedValue(undefined),
   mockGetSupabase: vi.fn(),
@@ -11,6 +14,7 @@ const {
 
 vi.mock("../../../lib/emailSync", () => ({
   syncEmailsFromGmail: mockSyncEmailsFromGmail,
+  reconcileUnreadInbox: mockReconcileUnreadInbox,
 }));
 
 vi.mock("../../../lib/gemini", () => ({

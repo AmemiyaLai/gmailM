@@ -2,11 +2,12 @@
 import SidebarLayout from "../layouts/SidebarLayout.astro";
 import EmailCard from "../components/EmailCard.astro";
 import FilterBar from "../components/FilterBar.astro";
+import EmailListShell from "../components/EmailListShell.astro";
 import { listEmails } from "../lib/emailQueries";
 import { categoryBadge } from "../lib/categoryBadge";
 import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
 import { extractSenderName } from "../lib/senderUtils";
-import { partitionEmailsBySender } from "../lib/emailDisplayGroups";
+import { buildSenderJumpItems, partitionEmailsBySender } from "../lib/emailDisplayGroups";
 
 const PAGE_SIZE = 50;
 
@@ -26,13 +27,20 @@ const { emails, hasMore } = await listEmails({
 });
 
 const badge = filters.category ? categoryBadge(filters.category) : null;
-const heading = filters.category ? `未讀郵件 · ${badge?.label ?? filters.category}` : "未讀郵件";
+const heading = filters.category ? `未讀討論串 · ${badge?.label ?? filters.category}` : "未讀討論串";
 
 const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
+const displayedEmails = [
+  ...collapsibleGroups.flatMap((group) => group.emails),
+  ...standaloneEmails,
+];
+const senderJumpItems = buildSenderJumpItems(displayedEmails);
+const senderJumpIdBySender = new Map(senderJumpItems.map((item) => [item.sender, item.id]));
 ---
 
 <SidebarLayout title={`${heading} — Gmail 即時監控面板`} activeView="unread" activeCategory={filters.category ?? null}>
-  <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
+  <EmailListShell items={senderJumpItems}>
+    <h1 style="font-size:var(--font-size-2xl); margin-bottom:var(--space-6);">{heading}</h1>
 
   <FilterBar
     action="/unread"
@@ -45,9 +53,9 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
     showUnreadToggle={false}
   />
 
-  <div id="email-list" data-unread-only="true" style="border:1px solid var(--color-border); border-radius:var(--radius-md); overflow:hidden;">
+  <div id="email-list" class="email-list-scroll" data-unread-only="true" style="border:1px solid var(--color-border); border-radius:var(--radius-md);">
     {collapsibleGroups.map((group, i) => (
-      <details class="sender-group" open={i === 0} data-sender={group.sender}>
+      <details id={senderJumpIdBySender.get(group.sender)} class="sender-group sender-jump-target" open={i === 0} data-sender={group.sender}>
           <summary class="sender-group-header">
             <span class="sender-group-toggle"></span>
             <input type="checkbox" class="group-select-all" aria-label={`全選 ${group.sender}`} />
@@ -74,23 +82,25 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
     ))}
 
     {standaloneEmails.map((email) => (
-      <EmailCard
-        id={email.id}
-        sender={email.sender}
-        subject={email.subject}
-        snippet={email.snippet}
-        receivedAt={email.received_at}
-        isRead={email.is_read}
-        category={email.category}
-        isImportant={email.is_important}
-        isStarred={email.is_starred}
-        isFirstSender={email.is_first_sender}
-      />
+      <div id={senderJumpIdBySender.get(email.sender)} class="sender-jump-target">
+        <EmailCard
+          id={email.id}
+          sender={email.sender}
+          subject={email.subject}
+          snippet={email.snippet}
+          receivedAt={email.received_at}
+          isRead={email.is_read}
+          category={email.category}
+          isImportant={email.is_important}
+          isStarred={email.is_starred}
+          isFirstSender={email.is_first_sender}
+        />
+      </div>
     ))}
 
     {emails.length === 0 && (
       <div style="text-align:center; padding:var(--space-16) 0; color:var(--color-text-tertiary);">
-        目前沒有未讀郵件。
+        目前沒有未讀討論串。
       </div>
     )}
   </div>
@@ -101,6 +111,7 @@ const { collapsibleGroups, standaloneEmails } = partitionEmailsBySender(emails);
     ) : <span />}
     {hasMore && <a href={buildFilterHref("/unread", { ...filters, page: filters.page + 1 })} class="btn btn-outline">下一頁</a>}
   </div>
+  </EmailListShell>
 
   <style>
     .sender-group { border-bottom: 1px solid var(--color-border-subtle); }

@@ -7,6 +7,17 @@
 
 <header class="site-header" transition:persist="site-header">
   <div class="container header-content">
+    <button
+      id="mobile-sidebar-toggle"
+      class="mobile-header-button mobile-sidebar-toggle"
+      type="button"
+      aria-label="開啟側邊欄"
+      aria-controls="app-sidebar"
+      aria-expanded="false"
+    >
+      <span class="material-symbols-rounded" aria-hidden="true">menu</span>
+    </button>
+
     <!-- 左上角 品牌 Logo 區塊 -->
     <a href="/" class="brand-link" title="回 Gmail Monitor 首頁">
       <div class="logo-wrapper">
@@ -28,37 +39,50 @@
         </form>
         <div id="header-search-suggestions" class="header-search-suggestions" role="listbox" aria-label="郵件搜尋建議" hidden></div>
       </div>
-      <span
-        id="connection-status"
-        class="connection-badge"
-        data-state="connecting"
-        role="status"
-        aria-live="polite"
-        aria-label="即時服務連線中"
-        data-tooltip="即時服務連線中"
-        tabindex="0"
+      <button
+        id="mobile-actions-toggle"
+        class="mobile-header-button mobile-actions-toggle"
+        type="button"
+        aria-label="展開更多操作"
+        aria-controls="header-actions-menu"
+        aria-expanded="false"
       >
-        <span class="material-symbols-rounded connection-icon" data-connection-icon aria-hidden="true">
-          wifi_off
+        <span class="material-symbols-rounded" aria-hidden="true">more_vert</span>
+      </button>
+      <div id="header-actions-menu" class="header-actions">
+        <span
+          id="connection-status"
+          class="connection-badge"
+          data-state="connecting"
+          role="status"
+          aria-live="polite"
+          aria-label="即時服務連線中"
+          data-tooltip="即時服務連線中"
+          tabindex="0"
+        >
+          <span class="material-symbols-rounded connection-icon" data-connection-icon aria-hidden="true">
+            wifi_off
+          </span>
+          <span class="sr-only" data-connection-label>即時服務連線中</span>
         </span>
-        <span class="sr-only" data-connection-label>即時服務連線中</span>
-      </span>
-      <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即從 Gmail 同步最新郵件" aria-label="立即同步">
-        <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
-        <span class="sr-only" data-sync-label>立即同步</span>
-      </button>
-      <button id="generate-summary" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即產生未讀郵件的 AI 摘要" aria-label="立即產生 AI 摘要">
-        <span class="material-symbols-rounded search-icon" data-summary-icon aria-hidden="true">auto_awesome</span>
-        <span class="sr-only" data-summary-label>立即產生 AI 摘要</span>
-      </button>
-      <button id="send-summary-discord" type="button" class="btn btn-outline nav-btn icon-only-btn" title="將最新 AI 摘要發送至 Discord" aria-label="發送最新摘要至 Discord">
-        <span class="material-symbols-rounded search-icon" data-discord-icon aria-hidden="true">forward_to_inbox</span>
-        <span class="sr-only" data-discord-label>發送最新摘要至 Discord</span>
-      </button>
-      <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
-        <span id="theme-icon-light" class="material-symbols-rounded theme-icon" aria-hidden="true">light_mode</span>
-        <span id="theme-icon-dark" class="material-symbols-rounded theme-icon" aria-hidden="true" style="display:none;">dark_mode</span>
-      </button>
+        <button id="sync-now" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即從 Gmail 同步最新郵件" aria-label="立即同步">
+          <span class="material-symbols-rounded search-icon" aria-hidden="true">sync</span>
+          <span class="sr-only" data-sync-label>立即同步</span>
+        </button>
+        <button id="generate-summary" type="button" class="btn btn-outline nav-btn icon-only-btn" title="立即產生未讀郵件的 AI 摘要" aria-label="立即產生 AI 摘要">
+          <span class="material-symbols-rounded search-icon" data-summary-icon aria-hidden="true">auto_awesome</span>
+          <span class="sr-only" data-summary-label>立即產生 AI 摘要</span>
+        </button>
+        <button id="send-summary-discord" type="button" class="btn btn-outline nav-btn icon-only-btn" title="將最新 AI 摘要發送至 Discord" aria-label="發送最新摘要至 Discord">
+          <span class="material-symbols-rounded search-icon" data-discord-icon aria-hidden="true">forward_to_inbox</span>
+          <span class="sr-only" data-discord-label>發送最新摘要至 Discord</span>
+        </button>
+        <button id="theme-toggle" type="button" class="btn btn-outline nav-btn theme-toggle-btn" title="切換主題" aria-label="切換主題">
+          <span id="theme-icon-light" class="material-symbols-rounded theme-icon" aria-hidden="true">light_mode</span>
+          <span id="theme-icon-dark" class="material-symbols-rounded theme-icon" aria-hidden="true" style="display:none;">dark_mode</span>
+          <span class="mobile-action-label">切換主題</span>
+        </button>
+      </div>
     </nav>
   </div>
   <div id="header-action-toast" class="header-toast" role="status" aria-live="polite" hidden></div>
@@ -71,6 +95,62 @@
   const INITIAL_SYNC_KEY = "gmail-monitor:initial-sync-completed";
 
   startRealtimeConnection();
+
+  function initializeMobileHeader() {
+    const sidebarToggle = document.querySelector<HTMLButtonElement>("#mobile-sidebar-toggle");
+    const actionsToggle = document.querySelector<HTMLButtonElement>("#mobile-actions-toggle");
+    const actionsMenu = document.querySelector<HTMLElement>("#header-actions-menu");
+
+    const closeActions = (restoreFocus = false) => {
+      actionsMenu?.classList.remove("header-actions--open");
+      actionsToggle?.setAttribute("aria-expanded", "false");
+      if (restoreFocus) actionsToggle?.focus();
+    };
+
+    if (sidebarToggle?.dataset.initialized !== "true") {
+      sidebarToggle?.addEventListener("click", () => {
+        const open = !document.documentElement.classList.contains("mobile-sidebar-open");
+        document.documentElement.classList.toggle("mobile-sidebar-open", open);
+        sidebarToggle.setAttribute("aria-expanded", String(open));
+        closeActions();
+        if (open) document.querySelector<HTMLButtonElement>("#mobile-sidebar-close")?.focus();
+      });
+      if (sidebarToggle) sidebarToggle.dataset.initialized = "true";
+    }
+
+    if (actionsToggle?.dataset.initialized !== "true") {
+      actionsToggle?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const open = !actionsMenu?.classList.contains("header-actions--open");
+        actionsMenu?.classList.toggle("header-actions--open", open);
+        actionsToggle.setAttribute("aria-expanded", String(open));
+        document.documentElement.classList.remove("mobile-sidebar-open");
+        sidebarToggle?.setAttribute("aria-expanded", "false");
+      });
+      if (actionsToggle) actionsToggle.dataset.initialized = "true";
+    }
+
+    if (actionsMenu?.dataset.initialized !== "true") {
+      actionsMenu?.addEventListener("click", (event) => event.stopPropagation());
+      actionsMenu?.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => closeActions());
+      });
+      if (actionsMenu) actionsMenu.dataset.initialized = "true";
+    }
+
+    if (document.documentElement.dataset.mobileHeaderGlobalInitialized !== "true") {
+      document.addEventListener("click", () => closeActions());
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && actionsMenu?.classList.contains("header-actions--open")) {
+          closeActions(true);
+        }
+      });
+      document.documentElement.dataset.mobileHeaderGlobalInitialized = "true";
+    }
+  }
+
+  document.addEventListener("astro:page-load", initializeMobileHeader);
+  initializeMobileHeader();
 
   const themeBtn = document.querySelector<HTMLButtonElement>("#theme-toggle");
   const lightIcon = document.querySelector<HTMLElement>("#theme-icon-light");
@@ -185,14 +265,32 @@
     syncLabel.textContent = automatic ? "首次同步中..." : "同步中...";
 
     try {
-      const res = await fetch("/api/gmail/sync", { method: "POST" });
-      const result = await res.json();
-      if (!res.ok || result.error) throw new Error(result.error || "同步失敗");
+      let result: {
+        error?: string;
+        reconciled?: number;
+        remaining?: number;
+        failed?: number;
+        completed?: boolean;
+        gmailThreadsUnread?: number;
+      } = {};
+      let totalReconciled = 0;
+      for (let batch = 0; batch < 10; batch++) {
+        const res = await fetch("/api/gmail/sync", { method: "POST" });
+        result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error || "同步失敗");
+        totalReconciled += result.reconciled ?? 0;
+        syncLabel.textContent = result.completed
+          ? "同步完成"
+          : `已校正 ${totalReconciled} 封，剩餘 ${result.remaining ?? 0} 封`;
+        if (result.completed || (result.failed ?? 0) > 0) break;
+      }
 
       sessionStorage.setItem(INITIAL_SYNC_KEY, "1");
-      syncLabel.textContent = `已同步 ${result.imported ?? 0} 封`;
+      syncLabel.textContent = result.completed
+        ? `同步完成（${result.gmailThreadsUnread ?? 0} 個未讀討論串）`
+        : `已校正 ${totalReconciled} 封，稍後將繼續`;
 
-      if ((result.imported ?? 0) > 0) {
+      if (totalReconciled > 0 || result.completed) {
         window.setTimeout(() => {
           navigate(window.location.pathname + window.location.search, { history: "replace" });
         }, 500);
@@ -413,6 +511,17 @@
     min-width: 0;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .mobile-header-button,
+  .mobile-action-label {
+    display: none;
+  }
+
   .nav-btn {
     display: inline-flex;
     align-items: center;
@@ -497,11 +606,75 @@
   .header-search-empty { margin: 0; padding: var(--space-4); color: var(--color-text-tertiary); font-size: var(--font-size-sm); }
 
   @media (max-width: 760px) {
-    .brand-info { display: none; }
-    .header-content { gap: var(--space-3); }
-    .header-nav { gap: var(--space-2); }
+    .site-header { padding-block: var(--space-2); }
+    .brand-link { display: none; }
+    .header-content { gap: var(--space-2); }
+    .header-nav { position: relative; gap: var(--space-2); }
     .header-search-wrap { min-width: 0; }
-    .connection-badge, #generate-summary, #send-summary-discord { display: none; }
+
+    .mobile-header-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      flex: 0 0 44px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-full);
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
+
+    .header-actions {
+      position: absolute;
+      z-index: 2300;
+      top: calc(100% + var(--space-2));
+      right: 0;
+      display: none;
+      width: min(280px, calc(100vw - var(--space-6)));
+      padding: var(--space-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-xl);
+      background: var(--color-surface);
+      box-shadow: var(--shadow-xl);
+    }
+
+    .header-actions--open {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-1);
+    }
+
+    .header-actions .connection-badge,
+    .header-actions .nav-btn {
+      width: 100%;
+      min-height: 44px;
+      justify-content: flex-start;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border-color: transparent;
+      border-radius: var(--radius-md);
+      background: transparent;
+    }
+
+    .header-actions .connection-badge {
+      height: auto;
+    }
+
+    .header-actions .sr-only {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 0;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+    }
+
+    .mobile-action-label {
+      display: inline;
+    }
   }
 
   .theme-toggle-btn {

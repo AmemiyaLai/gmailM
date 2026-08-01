@@ -26,41 +26,38 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response("Missing or invalid ids/action", { status: 400 });
   }
 
-  const supabase = getSupabase();
+  const gmailFn = ACTION_FN[action];
+  const results = await Promise.allSettled(ids.map((id) => gmailFn(id)));
 
-  if (action === "read") {
-    const { error } = await supabase.from("emails" as never).update({ is_read: true } as never).in("id", ids);
-    if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+  const succeeded: string[] = [];
+  const gmailFailed: string[] = [];
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`Bulk ${action}: Gmail sync failed for ${ids[i]}:`, result.reason);
+      gmailFailed.push(ids[i]);
+    } else {
+      succeeded.push(ids[i]);
     }
-  } else {
-    const { error } = await supabase.from("emails" as never).delete().in("id", ids);
-    if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
+  });
+
+  const supabase = getSupabase();
+  if (succeeded.length > 0) {
+    const dbResult = action === "read"
+      ? await supabase.from("emails" as never).update({ is_read: true } as never).in("id", succeeded)
+      : await supabase.from("emails" as never).delete().in("id", succeeded);
+    if (dbResult.error) {
+      return new Response(JSON.stringify({
+        error: dbResult.error.message,
+        gmailSucceeded: succeeded,
+        gmailFailed,
+      }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
   }
 
-  const gmailFn = ACTION_FN[action];
-  const results = await Promise.allSettled(ids.map((id) => gmailFn(id)));
-
-  const gmailFailed: string[] = [];
-  results.forEach((result, i) => {
-    if (result.status === "rejected") {
-      console.error(`Bulk ${action}: Gmail sync failed for ${ids[i]}:`, result.reason);
-      gmailFailed.push(ids[i]);
-    }
-  });
-
-  // succeeded = Supabase 已提交的 ids。DB 操作是單次 .in() 全有全無，失敗會在上面提早
-  // 500 return，所以走到這裡代表 DB 端全部成功，前端必須把這些列移除才會與 DB 一致。
-  // Gmail 端的結果另見 gmailFailed。
-  return new Response(JSON.stringify({ succeeded: ids, gmailFailed }), {
+  return new Response(JSON.stringify({ succeeded, gmailFailed }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });

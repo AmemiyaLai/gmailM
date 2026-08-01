@@ -1,0 +1,348 @@
+---
+import type { SenderJumpItem } from "../lib/emailDisplayGroups";
+
+export interface Props {
+  items: SenderJumpItem[];
+  topTargetId?: string;
+}
+
+const {
+  items,
+  topTargetId = "email-page-top",
+} = Astro.props;
+---
+
+{items.length > 0 && (
+  <div class="sender-jump">
+    <button
+      class="sender-jump-trigger"
+      type="button"
+      aria-label="開啟寄件者快速導航"
+      aria-expanded="false"
+      aria-controls="sender-jump-panel"
+    >
+      <span class="material-symbols-rounded" aria-hidden="true">quick_reference_all</span>
+      <span>寄件者</span>
+    </button>
+
+    <aside id="sender-jump-panel" class="sender-jump-panel" aria-label="寄件者快速導航">
+      <div class="sender-jump-heading">
+        <div>
+          <strong>快速跳轉</strong>
+          <span>{items.length} 位寄件者</span>
+        </div>
+        <button class="sender-jump-close" type="button" aria-label="關閉寄件者快速導航">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+        </button>
+      </div>
+
+      {items.length > 8 && (
+        <label class="sender-jump-search">
+          <span class="material-symbols-rounded" aria-hidden="true">search</span>
+          <span class="sr-only">搜尋目前頁面的寄件者</span>
+          <input type="search" placeholder="搜尋寄件者" autocomplete="off" />
+        </label>
+      )}
+
+      <nav class="sender-jump-list">
+        {items.map((item) => (
+          <a
+            href={`#${item.id}`}
+            class="sender-jump-link"
+            data-target={item.id}
+            data-search={`${item.label} ${item.sender}`.toLocaleLowerCase("zh-TW")}
+            title={item.sender}
+          >
+            <span class="sender-jump-status" class:list={{ "has-important": item.importantCount > 0 }} aria-hidden="true"></span>
+            <span class="sender-jump-label">{item.label}</span>
+            <span class="sender-jump-count" aria-label={`${item.count} 封，其中 ${item.unreadCount} 封未讀`}>
+              {item.unreadCount > 0 ? `${item.unreadCount} 未讀` : `${item.count} 封`}
+            </span>
+          </a>
+        ))}
+        <p class="sender-jump-empty" hidden>找不到這位寄件者</p>
+      </nav>
+
+      <a class="sender-jump-top" href={`#${topTargetId}`}>
+        <span class="material-symbols-rounded" aria-hidden="true">vertical_align_top</span>
+        回到頂端
+      </a>
+    </aside>
+  </div>
+)}
+
+<script>
+  import { initSenderJumpNav as initSenderJumpNavClient } from "../lib/senderJumpNavClient";
+
+  let cleanupSenderJumpNav: (() => void) | undefined;
+
+  function mountSenderJumpNav() {
+    cleanupSenderJumpNav?.();
+    const root = document.querySelector<HTMLElement>(".sender-jump");
+    cleanupSenderJumpNav = root ? initSenderJumpNavClient(root) : undefined;
+  }
+
+  document.addEventListener("astro:page-load", mountSenderJumpNav);
+  mountSenderJumpNav();
+</script>
+
+<style>
+  .sender-jump {
+    min-width: 0;
+  }
+
+  .sender-jump-panel {
+    position: sticky;
+    top: 72px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 96px);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    box-shadow: var(--shadow-md);
+  }
+
+  .sender-jump-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .sender-jump-heading div {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sender-jump-heading strong {
+    font-size: var(--font-size-sm);
+  }
+
+  .sender-jump-heading span {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+  }
+
+  .sender-jump-close,
+  .sender-jump-trigger {
+    border: 0;
+    color: var(--color-text);
+    cursor: pointer;
+  }
+
+  .sender-jump-close {
+    display: none;
+    padding: var(--space-2);
+    background: transparent;
+  }
+
+  .sender-jump-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-secondary);
+  }
+
+  .sender-jump-search .material-symbols-rounded {
+    font-size: 18px;
+  }
+
+  .sender-jump-search input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    color: var(--color-text);
+    background: transparent;
+    font-size: var(--font-size-xs);
+  }
+
+  .sender-jump-list {
+    overflow-y: auto;
+    padding: var(--space-2);
+  }
+
+  .sender-jump-link {
+    display: grid;
+    grid-template-columns: 6px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .sender-jump-link:hover,
+  .sender-jump-link.is-active {
+    color: var(--color-text);
+    background: var(--color-primary-muted);
+  }
+
+  .sender-jump-link.is-active {
+    box-shadow: inset 2px 0 var(--color-primary);
+  }
+
+  .sender-jump-status {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-border);
+  }
+
+  .sender-jump-status.has-important {
+    background: var(--color-error);
+  }
+
+  .sender-jump-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sender-jump-count {
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .sender-jump-empty {
+    padding: var(--space-4) var(--space-2);
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+
+  .sender-jump-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border-top: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  .sender-jump-top:hover {
+    color: var(--color-primary-hover);
+  }
+
+  .sender-jump-top .material-symbols-rounded {
+    font-size: 16px;
+  }
+
+  .sender-jump-trigger {
+    display: none;
+  }
+
+  @media (max-width: 1199px) {
+    .sender-jump-panel {
+      position: fixed;
+      z-index: 1200;
+      top: 72px;
+      right: var(--space-4);
+      bottom: var(--space-4);
+      width: min(300px, calc(100vw - var(--space-8)));
+      max-height: none;
+      visibility: hidden;
+      opacity: 0;
+      transform: translateX(calc(100% + var(--space-6)));
+      transition: transform var(--transition-base), opacity var(--transition-fast), visibility var(--transition-fast);
+    }
+
+    .sender-jump--open .sender-jump-panel {
+      visibility: visible;
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    .sender-jump-close {
+      display: flex;
+    }
+
+    .sender-jump-trigger {
+      position: fixed;
+      right: var(--space-5);
+      bottom: var(--space-5);
+      z-index: 1100;
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-full);
+      background: var(--color-primary);
+      box-shadow: var(--shadow-lg);
+      color: white;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .sender-jump-panel {
+      top: auto;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      max-height: min(72dvh, 620px);
+      border-right: 0;
+      border-bottom: 0;
+      border-left: 0;
+      border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+      transform: translateY(calc(100% + var(--space-6)));
+    }
+
+    .sender-jump--open .sender-jump-panel {
+      transform: translateY(0);
+    }
+
+    .sender-jump-heading {
+      min-height: 58px;
+      padding-inline: var(--space-5);
+    }
+
+    .sender-jump-close {
+      width: 40px;
+      height: 40px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sender-jump-search {
+      min-height: 44px;
+      margin: var(--space-3) var(--space-4);
+    }
+
+    .sender-jump-search input {
+      font-size: 16px;
+    }
+
+    .sender-jump-link {
+      min-height: 46px;
+      padding-inline: var(--space-3);
+      font-size: var(--font-size-sm);
+    }
+
+    .sender-jump-trigger {
+      right: var(--space-3);
+      bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+      min-height: 44px;
+      padding: var(--space-3);
+    }
+
+    .sender-jump-trigger span:last-child {
+      display: none;
+    }
+  }
+</style>

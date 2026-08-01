@@ -45,6 +45,7 @@ describe("GET /api/gmail/watch-renew", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("CRON_SECRET", "test-secret");
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
   });
 
   it("無 Authorization header 應回傳 401", async () => {
@@ -55,6 +56,14 @@ describe("GET /api/gmail/watch-renew", () => {
   it("Authorization 不符時應回傳 401", async () => {
     const res = await GET(makeContext("Bearer wrong"));
     expect(res.status).toBe(401);
+  });
+
+  it("自動化暫停時不應續訂 Gmail watch", async () => {
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "false");
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ status: "paused" });
+    expect(mockStartWatch).not.toHaveBeenCalled();
   });
 
   it("有效授權時應執行 startWatch 並回傳結果", async () => {

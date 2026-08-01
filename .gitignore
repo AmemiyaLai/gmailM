@@ -65,9 +65,9 @@ client_secret_*.json
 scripts/credentials/
 *.log
 COVERAGE.md
+!scripts/docs/COVERAGE.md
 coverage-report.txt
 nul
 nul/
-
 
 

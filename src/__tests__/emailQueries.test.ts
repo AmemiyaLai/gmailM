@@ -6,6 +6,13 @@ const { mockGetInboxUnreadCount } = vi.hoisted(() => ({
 
 vi.mock("../lib/gmail", () => ({
   getInboxUnreadCount: mockGetInboxUnreadCount,
+  classifyGmailApiError: (error: unknown) => ({
+    status: null,
+    rateLimited: false,
+    historyExpired: false,
+    retryAfter: null,
+    message: error instanceof Error ? error.message : String(error),
+  }),
 }));
 
 const mockQuery = {
@@ -85,6 +92,7 @@ describe("emailQueries", () => {
   describe("getGmailUnreadStatus()", () => {
     beforeEach(() => {
       __resetGmailUnreadStatusThrottle();
+      vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
     });
 
     it("首頁應優先使用 Gmail threadsUnread 並更新快取", async () => {
@@ -128,6 +136,18 @@ describe("emailQueries", () => {
 
       expect(mockGetInboxUnreadCount).toHaveBeenCalledTimes(1);
       expect(second).toEqual(first);
+    });
+
+    it("自動化關閉時首頁只讀快取，不呼叫 Gmail", async () => {
+      vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
+      vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "false");
+      mockQuery.maybeSingle.mockResolvedValueOnce({
+        data: { inbox_threads_unread: 7, updated_at: "2026-07-31T00:00:00Z" },
+        error: null,
+      });
+
+      await expect(getGmailUnreadStatus()).resolves.toMatchObject({ count: 7, source: "cache" });
+      expect(mockGetInboxUnreadCount).not.toHaveBeenCalled();
     });
   });
 

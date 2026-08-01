@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { startWatch } from "../../../lib/gmail";
+import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
 
 interface SyncStateRow {
   watch_address: string;
@@ -14,6 +15,7 @@ export const GET: APIRoute = async ({ request }) => {
   if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
+  if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
 
   try {
     const { historyId, expiration } = await startWatch();

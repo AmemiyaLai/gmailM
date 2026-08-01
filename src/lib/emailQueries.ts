@@ -5,7 +5,9 @@ import type { AnalyticsEmail, AnalyticsRange } from "./emailAnalytics";
 import { rangeToQueryBounds } from "./emailAnalytics";
 import { endOfTaipeiDate, startOfTaipeiDate } from "./emailFilters";
 import type { AuthResult, TrustEvidence, TrustLevel } from "./senderTrust";
-import { getInboxUnreadCount } from "./gmail";
+import { classifyGmailApiError, getInboxUnreadCount } from "./gmail";
+import { recordGmailCooldown } from "./gmailSyncControl";
+import { isGmailAutomationEnabled } from "./gmailAutomation";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -145,8 +147,14 @@ export interface GmailUnreadStatus {
   updatedAt: string | null;
 }
 
+interface StoredGmailUnreadState {
+  inbox_threads_unread?: number | null;
+  updated_at?: string | null;
+  cooldown_until?: string | null;
+}
+
 /** 避免每次頁面載入都打 Gmail API 導致觸發 429 User-rate limit exceeded。 */
-const GMAIL_UNREAD_THROTTLE_MS = 30_000;
+const GMAIL_UNREAD_THROTTLE_MS = 5 * 60_000;
 let gmailUnreadCache: { result: GmailUnreadStatus; checkedAt: number } | null = null;
 
 /** 僅供測試重置節流快取，不應在正式程式碼中呼叫。 */
@@ -162,6 +170,31 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
   const supabase = getSupabase();
   const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
   let result: GmailUnreadStatus | undefined;
+  let storedState: StoredGmailUnreadState | null = null;
+  if (watchAddress) {
+    const { data } = await supabase
+      .from("gmail_sync_state" as never)
+      .select("inbox_threads_unread, updated_at, cooldown_until")
+      .eq("watch_address", watchAddress)
+      .maybeSingle();
+    storedState = data as unknown as StoredGmailUnreadState | null;
+    if (storedState?.cooldown_until && new Date(storedState.cooldown_until).getTime() > Date.now()) {
+      if (storedState.inbox_threads_unread !== null && storedState.inbox_threads_unread !== undefined) {
+        result = { count: storedState.inbox_threads_unread, source: "cache", updatedAt: storedState.updated_at ?? null };
+      } else {
+        result = { count: await getUnreadCount(), source: "database", updatedAt: null };
+      }
+      gmailUnreadCache = { result, checkedAt: Date.now() };
+      return result;
+    }
+  }
+  if (!isGmailAutomationEnabled()) {
+    result = storedState?.inbox_threads_unread !== null && storedState?.inbox_threads_unread !== undefined
+      ? { count: storedState.inbox_threads_unread, source: "cache", updatedAt: storedState.updated_at ?? null }
+      : { count: await getUnreadCount(), source: "database", updatedAt: null };
+    gmailUnreadCache = { result, checkedAt: Date.now() };
+    return result;
+  }
   try {
     const count = await getInboxUnreadCount();
     const updatedAt = new Date().toISOString();
@@ -174,17 +207,14 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
     }
     result = { count, source: "gmail", updatedAt };
   } catch (error) {
-    console.error("讀取 Gmail 未讀討論串數失敗，改用同步快取：", error);
-    if (watchAddress) {
-      const { data } = await supabase
-        .from("gmail_sync_state" as never)
-        .select("inbox_threads_unread, updated_at")
-        .eq("watch_address", watchAddress)
-        .maybeSingle();
-      const cached = data as { inbox_threads_unread?: number | null; updated_at?: string | null } | null;
-      if (cached?.inbox_threads_unread !== null && cached?.inbox_threads_unread !== undefined) {
-        result = { count: cached.inbox_threads_unread, source: "cache", updatedAt: cached.updated_at ?? null };
-      }
+    const info = classifyGmailApiError(error);
+    if (info.rateLimited && watchAddress) {
+      const retryAfter = info.retryAfter ?? new Date(Date.now() + 15 * 60_000);
+      await recordGmailCooldown(supabase, watchAddress, retryAfter, info.message).catch(() => undefined);
+    }
+    console.warn("gmail_unread_count_failed", { status: info.status, message: info.message });
+    if (storedState?.inbox_threads_unread !== null && storedState?.inbox_threads_unread !== undefined) {
+      result = { count: storedState.inbox_threads_unread, source: "cache", updatedAt: storedState.updated_at ?? null };
     }
     if (!result) {
       result = { count: await getUnreadCount(), source: "database", updatedAt: null };

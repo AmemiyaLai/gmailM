@@ -55,6 +55,7 @@ import {
   getMessageState,
   listUnreadInboxMessages,
   isHistoryIdExpired,
+  classifyGmailApiError,
 } from "../lib/gmail";
 
 describe("gmail.ts", () => {
@@ -574,6 +575,24 @@ describe("gmail.ts", () => {
     it("應辨識 historyId 過期的 404", () => {
       expect(isHistoryIdExpired({ response: { status: 404 } })).toBe(true);
       expect(isHistoryIdExpired(new Error("network"))).toBe(false);
+    });
+  });
+
+  describe("Gmail API error classification", () => {
+    it("應辨識 429 並解析訊息中的 retry time", () => {
+      const info = classifyGmailApiError({
+        code: 429,
+        cause: { message: "User-rate limit exceeded. Retry after 2026-08-01T07:25:54.027Z" },
+      });
+      expect(info.rateLimited).toBe(true);
+      expect(info.retryAfter?.toISOString()).toBe("2026-08-01T07:25:54.027Z");
+    });
+
+    it("應解析 Retry-After 秒數", () => {
+      const info = classifyGmailApiError({
+        response: { status: 429, headers: { get: () => "60" } },
+      }, new Date("2026-08-01T00:00:00Z"));
+      expect(info.retryAfter?.toISOString()).toBe("2026-08-01T00:01:00.000Z");
     });
   });
 });

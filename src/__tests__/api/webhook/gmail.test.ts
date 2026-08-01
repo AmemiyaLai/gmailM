@@ -18,6 +18,7 @@ vi.mock("google-auth-library", () => ({
 const {
   mockListHistory, mockGetMessage, mockGetMessageState, mockGetInboxUnreadCount,
   mockStartWatch, mockIsHistoryIdExpired, mockReconcileUnreadInbox, mockClassifyEmail,
+  mockClassifyGmailApiError,
   mockSendDiscordNotification, mockJudgeEmailImportance,
   mockNormalizeSenderAddress, mockRegisterFirstSender,
   mockRefreshSenderTags, mockGetSupabase,
@@ -30,6 +31,13 @@ const {
   mockGetInboxUnreadCount: vi.fn().mockResolvedValue(5),
   mockStartWatch: vi.fn().mockResolvedValue({ historyId: "500", expiration: "999" }),
   mockIsHistoryIdExpired: vi.fn().mockReturnValue(false),
+  mockClassifyGmailApiError: vi.fn((error: unknown) => ({
+    status: (error as { code?: number })?.code ?? null,
+    rateLimited: (error as { code?: number })?.code === 429,
+    historyExpired: (error as { code?: number })?.code === 404,
+    retryAfter: null,
+    message: error instanceof Error ? error.message : String(error),
+  })),
   mockReconcileUnreadInbox: vi.fn().mockResolvedValue({
     gmailThreadsUnread: 5, reconciled: 0, remaining: 0, failed: 0, completed: true,
   }),
@@ -57,6 +65,7 @@ vi.mock("../../../lib/gmail", () => ({
   getInboxUnreadCount: mockGetInboxUnreadCount,
   startWatch: mockStartWatch,
   isHistoryIdExpired: mockIsHistoryIdExpired,
+  classifyGmailApiError: mockClassifyGmailApiError,
 }));
 
 vi.mock("../../../lib/emailSync", () => ({
@@ -184,6 +193,7 @@ function setupSupabase(opts?: { lastHistoryId?: number | null; existingEmailIds?
 describe("POST /api/webhook/gmail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
     mockVerifyIdToken.mockResolvedValue({
       getPayload: () => ({
         email: PUSH_SERVICE_ACCOUNT,
@@ -192,6 +202,14 @@ describe("POST /api/webhook/gmail", () => {
       }),
     });
     mockEvaluateAndStoreTrust.mockResolvedValue({ level: "unverified" });
+  });
+
+  it("自動化開關關閉時應直接 ACK，不驗證或呼叫 Gmail", async () => {
+    vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "false");
+    const res = await POST(makeContext(undefined, { emailAddress: "test@gmail.com", historyId: "200" }));
+    expect(res.status).toBe(204);
+    expect(mockVerifyIdToken).not.toHaveBeenCalled();
+    expect(mockListHistory).not.toHaveBeenCalled();
   });
 
   it("upsert payload 應包含驗證標頭欄位", async () => {
@@ -321,12 +339,10 @@ describe("POST /api/webhook/gmail", () => {
     expect(res.status).toBe(400);
   });
 
-  it("首次 baseline 記錄時應回傳 200", async () => {
+  it("首次 baseline 記錄時應回傳 204", async () => {
     setupSupabase({ lastHistoryId: null });
     const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "100" }));
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    expect(text).toContain("initial baseline");
+    expect(res.status).toBe(204);
   });
 
   it("正常處理新郵件時應回傳 200", async () => {
@@ -391,8 +407,24 @@ describe("POST /api/webhook/gmail", () => {
 
     // 前推游標會讓這區間的郵件永久遺失，必須讓 Pub/Sub 重送
     expect(res.status).toBe(500);
-    expect(chain.update).not.toHaveBeenCalled();
+    expect(chain.update).not.toHaveBeenCalledWith(expect.objectContaining({ last_history_id: expect.anything() }));
     consoleSpy.mockRestore();
+  });
+
+  it("listHistory 遇到 429 時應記錄冷卻並回 204", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
+    mockListHistory.mockRejectedValue(Object.assign(new Error("rate limited"), { code: 429 }));
+
+    const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+    expect(res.status).toBe(204);
+    expect(chain.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      watch_address: "test@gmail.com",
+      cooldown_until: expect.any(String),
+    }));
+    expect(chain.update).not.toHaveBeenCalledWith(expect.objectContaining({ last_history_id: expect.anything() }));
+    warnSpy.mockRestore();
   });
 
   it("應以 listHistory 回傳的 historyId 作為新游標", async () => {
@@ -518,7 +550,7 @@ describe("POST /api/webhook/gmail", () => {
 
   it("單封郵件處理失敗時應處理完其餘郵件，但回 500 且不前推游標", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { chain, fromMock } = setupSupabase({ lastHistoryId: 50 });
+    const { chain } = setupSupabase({ lastHistoryId: 50 });
     mockListHistory.mockResolvedValue({
       messages: [{ messageId: "msg-fail" }, { messageId: "msg-ok" }],
     });
@@ -540,19 +572,15 @@ describe("POST /api/webhook/gmail", () => {
 
     const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
     expect(res.status).toBe(500);
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to process message msg-fail"), expect.any(Error));
+    expect(consoleSpy).toHaveBeenCalledWith("gmail_message_process_failed", expect.objectContaining({
+      messageId: "msg-fail",
+      message: "getMessage fail",
+    }));
     // 其餘郵件仍要處理完，但游標不前推，讓 Pub/Sub 重送時補上失敗那封
     expect(mockGetMessage).toHaveBeenCalledWith("msg-ok");
     
-    // 檢查是否有前推 gmail_sync_state (應為不前推，即沒有呼叫 eq("watch_address", "test@gmail.com") 去 update)
-    // 雖然中間處理其他信件時有呼叫 .update() 去更新 emails 欄位，但 gmail_sync_state 的 update 應未被執行。
-    // 我們可以藉由檢查 supabase.from 傳入的 table 來驗證，但由於 mock 是共用的，
-    // 我們可以直接斷言最後沒有完成的更新，或者追蹤 from('gmail_sync_state') 的呼叫次數。
-    const syncStateUpdateCalls = fromMock.mock.calls.filter(
-      (c) => (c as unknown as [string, ...unknown[]])[0] === "gmail_sync_state",
-    );
-    // 第一次是 select 一次，之後失敗不應有第二次（也就是不進行 update）
-    expect(syncStateUpdateCalls.length).toBe(1);
+    // 允許 finally 釋放 lease，但不可前推 history 游標。
+    expect(chain.update).not.toHaveBeenCalledWith(expect.objectContaining({ last_history_id: expect.anything() }));
     consoleSpy.mockRestore();
   });
 
@@ -636,15 +664,14 @@ describe("POST /api/webhook/gmail", () => {
       expect(chain.update).toHaveBeenCalled();
     });
 
-    it("包裝格式的首次 baseline 記錄應回 200", async () => {
+    it("包裝格式的首次 baseline 記錄應回 204", async () => {
       setupSupabase({ lastHistoryId: null });
 
       const res = await POST(
         makeContext("Bearer valid", envelope({ emailAddress: "test@gmail.com", historyId: "100" })),
       );
 
-      expect(res.status).toBe(200);
-      expect(await res.text()).toContain("initial baseline");
+      expect(res.status).toBe(204);
     });
 
     it("message.data 內缺少必要欄位時應回 400", async () => {

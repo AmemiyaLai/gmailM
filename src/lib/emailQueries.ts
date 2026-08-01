@@ -145,9 +145,23 @@ export interface GmailUnreadStatus {
   updatedAt: string | null;
 }
 
+/** 避免每次頁面載入都打 Gmail API 導致觸發 429 User-rate limit exceeded。 */
+const GMAIL_UNREAD_THROTTLE_MS = 30_000;
+let gmailUnreadCache: { result: GmailUnreadStatus; checkedAt: number } | null = null;
+
+/** 僅供測試重置節流快取，不應在正式程式碼中呼叫。 */
+export function __resetGmailUnreadStatusThrottle() {
+  gmailUnreadCache = null;
+}
+
 export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
+  if (gmailUnreadCache && Date.now() - gmailUnreadCache.checkedAt < GMAIL_UNREAD_THROTTLE_MS) {
+    return gmailUnreadCache.result;
+  }
+
   const supabase = getSupabase();
   const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  let result: GmailUnreadStatus | undefined;
   try {
     const count = await getInboxUnreadCount();
     const updatedAt = new Date().toISOString();
@@ -158,7 +172,7 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
         updated_at: updatedAt,
       } as never);
     }
-    return { count, source: "gmail", updatedAt };
+    result = { count, source: "gmail", updatedAt };
   } catch (error) {
     console.error("讀取 Gmail 未讀討論串數失敗，改用同步快取：", error);
     if (watchAddress) {
@@ -169,11 +183,16 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
         .maybeSingle();
       const cached = data as { inbox_threads_unread?: number | null; updated_at?: string | null } | null;
       if (cached?.inbox_threads_unread !== null && cached?.inbox_threads_unread !== undefined) {
-        return { count: cached.inbox_threads_unread, source: "cache", updatedAt: cached.updated_at ?? null };
+        result = { count: cached.inbox_threads_unread, source: "cache", updatedAt: cached.updated_at ?? null };
       }
     }
-    return { count: await getUnreadCount(), source: "database", updatedAt: null };
+    if (!result) {
+      result = { count: await getUnreadCount(), source: "database", updatedAt: null };
+    }
   }
+
+  gmailUnreadCache = { result, checkedAt: Date.now() };
+  return result;
 }
 
 export async function getTodayCount(): Promise<number> {

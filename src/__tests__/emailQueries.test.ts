@@ -35,6 +35,7 @@ vi.mock("../lib/supabase", () => ({
 import {
   getUnreadCount,
   getGmailUnreadStatus,
+  __resetGmailUnreadStatusThrottle,
   getTodayCount,
   getCategoryCounts,
   getImportantEmails,
@@ -82,6 +83,10 @@ describe("emailQueries", () => {
   });
 
   describe("getGmailUnreadStatus()", () => {
+    beforeEach(() => {
+      __resetGmailUnreadStatusThrottle();
+    });
+
     it("首頁應優先使用 Gmail threadsUnread 並更新快取", async () => {
       vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
       mockGetInboxUnreadCount.mockResolvedValueOnce(9);
@@ -112,6 +117,17 @@ describe("emailQueries", () => {
         updatedAt: "2026-07-31T00:00:00Z",
       });
       errorSpy.mockRestore();
+    });
+
+    it("節流窗口內應直接回傳快取結果，不再重複呼叫 Gmail API", async () => {
+      vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@example.com");
+      mockGetInboxUnreadCount.mockResolvedValueOnce(9);
+
+      const first = await getGmailUnreadStatus();
+      const second = await getGmailUnreadStatus();
+
+      expect(mockGetInboxUnreadCount).toHaveBeenCalledTimes(1);
+      expect(second).toEqual(first);
     });
   });
 

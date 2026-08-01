@@ -1,7 +1,7 @@
 ---
 import StatCard from "./StatCard.astro";
 import CategoryCard from "./CategoryCard.astro";
-import ImportantEmailCard from "./ImportantEmailCard.astro";
+import EmailCard from "./EmailCard.astro";
 import type { DashboardStatTrends, EmailPreview, GmailUnreadStatus } from "../lib/emailQueries";
 
 export interface Props {
@@ -43,7 +43,19 @@ const { unreadCount, unreadStatus, todayCount, pendingReviewEmails, categoryCoun
       <h2 style="font-size:var(--font-size-md); margin-bottom:var(--space-3);">⭐ 重要郵件</h2>
       <div id="important-email-row" class="important-row">
         {importantEmails.map((email) => (
-          <ImportantEmailCard email={email} />
+          <EmailCard
+            id={email.id}
+            sender={email.sender}
+            subject={email.subject}
+            snippet={email.snippet}
+            receivedAt={email.received_at}
+            isRead={email.is_read}
+            category={email.category}
+            isImportant={true}
+            isStarred={email.is_starred}
+            compact
+            showCheckbox={false}
+          />
         ))}
       </div>
     </div>
@@ -65,10 +77,10 @@ const { unreadCount, unreadStatus, todayCount, pendingReviewEmails, categoryCoun
   }
 
   .important-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
-    overflow-x: auto;
-    padding-bottom: var(--space-2);
+    width: 100%;
   }
 
   .sync-fallback {

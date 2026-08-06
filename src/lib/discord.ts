@@ -319,6 +319,55 @@ export function buildCleanupResultEmbed(
   };
 }
 
+export interface GmailBreakerAlert {
+  watchAddress: string;
+  consecutiveFailures: number;
+  firstFailureAt: string | null;
+  cooldownUntil: string | null;
+  lastError: string;
+}
+
+const BREAKER_ALERT_COLOR = 0xfaa61a; // amber — 運維警告，與重要郵件的紅色區隔
+
+/**
+ * Gmail 同步熔斷警告。只在 recordGmailFailure 回報 shouldNotify 時發送，
+ * 也就是同一段故障最多一則，避免通知本身變成另一種風暴。
+ */
+export async function sendGmailBreakerAlert(alert: GmailBreakerAlert): Promise<void> {
+  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  const siteUrl = import.meta.env.SITE_URL;
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [
+        {
+          title: "⚠️ Gmail 同步已熔斷",
+          description:
+            "同步連續失敗超過設定的時間窗，已強制進入冷卻以停止錯誤流量。冷卻期間所有同步入口都會被擋下。",
+          color: BREAKER_ALERT_COLOR,
+          fields: [
+            { name: "監控信箱", value: alert.watchAddress || "(未設定)" },
+            { name: "連續失敗次數", value: String(alert.consecutiveFailures), inline: true },
+            {
+              name: "首次失敗",
+              value: alert.firstFailureAt ?? "(未知)",
+              inline: true,
+            },
+            { name: "冷卻至", value: alert.cooldownUntil ?? "(未設定)" },
+            { name: "最後錯誤", value: truncate(alert.lastError || "(無訊息)", 500) },
+            ...(siteUrl ? [{ name: "管理頁面", value: `[前往查看](${siteUrl})` }] : []),
+          ],
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
+}
+
 export interface InboundDigestPayload {
   total: number;
   unreadTotal: number;

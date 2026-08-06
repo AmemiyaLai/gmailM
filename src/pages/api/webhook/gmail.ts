@@ -12,6 +12,7 @@ import {
 } from "../../../lib/gmail";
 import {
   acquireGmailSyncLease,
+  handleGmailSyncFailure,
   recordGmailCooldown,
   releaseGmailSyncLease,
 } from "../../../lib/gmailSyncControl";
@@ -335,6 +336,7 @@ export const POST: APIRoute = async ({ request }) => {
           return new Response(null, { status: 204 });
         }
         console.error("gmail_history_recovery_failed", { status: info.status, message: info.message });
+        await handleGmailSyncFailure(supabase, emailAddress, info.message, "historyRecovery");
         await releaseLease();
         return new Response("History recovery failed", { status: 500 });
       }
@@ -350,6 +352,7 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response(null, { status: 204 });
     }
     console.error("gmail_list_history_failed", { status: info.status, message: info.message });
+    await handleGmailSyncFailure(supabase, emailAddress, info.message, "listHistory");
     await releaseLease();
     return new Response("listHistory failed", { status: 500 });
   }
@@ -362,6 +365,7 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response(null, { status: 204 });
     }
     console.error("部分郵件處理失敗，保留 last_history_id 以待 Pub/Sub 重送");
+    await handleGmailSyncFailure(supabase, emailAddress, "部分郵件處理失敗", "processMessages");
     await releaseLease();
     return new Response("Partial failure", { status: 500 });
   }
@@ -372,11 +376,16 @@ export const POST: APIRoute = async ({ request }) => {
       last_history_id: Number(latestHistoryId),
       cooldown_until: null,
       last_sync_error: null,
+      // 同步成功即重設熔斷計數，讓下一段故障能重新累積並重新發出警告
+      consecutive_failures: 0,
+      first_failure_at: null,
+      breaker_notified_at: null,
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
   if (cursorError) {
     console.error("gmail_cursor_update_failed", { message: cursorError.message });
+    await handleGmailSyncFailure(supabase, emailAddress, cursorError.message, "cursorUpdate");
     await releaseLease();
     return new Response("Cursor update failed", { status: 500 });
   }

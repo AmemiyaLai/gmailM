@@ -64,6 +64,10 @@ for (const meta of attachments) {
   attachmentLinks.push({ meta, url: signedUrl });
 }
 
+// 單封信內容不會再變動，讓瀏覽器快取以省下重複的 Supabase 讀取。
+// max-age 需明顯短於附件簽名 URL 的 1 小時有效期，否則快取頁面上的下載連結會失效。
+Astro.response.headers.set("Cache-Control", "private, max-age=600");
+
 function formatBytes(size: number): string {
   if (size >= 1_048_576) return `${(size / 1_048_576).toFixed(1)} MB`;
   if (size >= 1_024) return `${(size / 1_024).toFixed(1)} KB`;

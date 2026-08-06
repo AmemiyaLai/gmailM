@@ -17,8 +17,12 @@ async function resolveAutoTag(email: SenderEmail): Promise<{ tag: SenderTag; con
   return { tag: OTHER_SENDER_TAG, confidence: 0 };
 }
 
+/** 寄件者標籤重算時單次讀取的郵件上限。 */
+const MAX_SENDER_TAG_ROWS = 2000;
+
 export async function refreshSenderTags(supabase: Supabase): Promise<{ processed: number; aggregated: number }> {
-  const { data, error } = await supabase.from("emails").select("sender, sender_address, subject, snippet");
+  // 全表掃描需有明確上限，否則郵件量成長後會放大 Supabase egress。
+  const { data, error } = await supabase.from("emails").select("sender, sender_address, subject, snippet").limit(MAX_SENDER_TAG_ROWS);
   if (error) throw error;
   const groups = new Map<string, SenderEmail[]>();
   for (const email of (data ?? []) as SenderEmail[]) { const key = keyForEmail(email); if (key) groups.set(key, [...(groups.get(key) ?? []), email]); }

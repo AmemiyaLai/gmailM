@@ -1,12 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { registerFirstSender, sendFirstSenderDigest } from "../lib/firstSender";
+import { deliverFirstSenderNotification, registerFirstSender, sendFirstSenderDigest } from "../lib/firstSender";
 
 vi.mock("../lib/discord", () => ({
   sendFirstSenderDigestNotification: vi.fn().mockResolvedValue(undefined),
   sendFirstSenderDiscordNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { sendFirstSenderDigestNotification } from "../lib/discord";
+import { sendFirstSenderDiscordNotification, sendFirstSenderDigestNotification } from "../lib/discord";
 
 const baseEvent = {
   sender_address: "alice@example.com",
@@ -51,6 +51,93 @@ describe("registerFirstSender()", () => {
     });
     const supabase = { from: vi.fn().mockReturnValue({ insert }) };
     await expect(registerFirstSender(supabase, baseEvent)).rejects.toThrow();
+  });
+});
+
+describe("deliverFirstSenderNotification()", () => {
+  const event = {
+    sender_address: "alice@example.com",
+    first_email_id: "msg-1",
+    sender_display: "Alice <alice@example.com>",
+    first_received_at: "2026-07-26T08:00:00.000Z",
+    source: "live" as const,
+    notification_status: "pending" as const,
+    notification_attempts: 2,
+    last_notification_error: null,
+    notified_at: null,
+  };
+  const email = {
+    senderAddress: "alice@example.com",
+    threadId: "t-1",
+    sender: "Alice <alice@example.com>",
+    subject: "Hello",
+    snippet: "s",
+    receivedAt: new Date(),
+    category: null,
+    labels: [],
+  };
+
+  function makeSupabase(updateError?: unknown) {
+    const updateEq = vi.fn().mockResolvedValue({ error: updateError ?? null });
+    const update = vi.fn().mockReturnValue({ eq: updateEq });
+    const supabase = { from: vi.fn().mockReturnValue({ update }) };
+    return { supabase, update, updateEq };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(sendFirstSenderDiscordNotification).mockResolvedValue(undefined);
+  });
+
+  it("成功發送後應標記 sent 並回傳 true", async () => {
+    const { supabase, update, updateEq } = makeSupabase();
+    const result = await deliverFirstSenderNotification(supabase, event, email);
+
+    expect(result).toBe(true);
+    expect(sendFirstSenderDiscordNotification).toHaveBeenCalledWith(email);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      notification_status: "sent",
+      notification_attempts: 3,
+      last_notification_error: null,
+      notified_at: expect.any(String),
+    }));
+    expect(updateEq).toHaveBeenCalledWith("sender_address", "alice@example.com");
+  });
+
+  it("Discord 發送失敗時應標記 failed、記錄錯誤並回傳 false", async () => {
+    vi.mocked(sendFirstSenderDiscordNotification).mockRejectedValue(new Error("webhook 500"));
+    const { supabase, update } = makeSupabase();
+    const result = await deliverFirstSenderNotification(supabase, event, email);
+
+    expect(result).toBe(false);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      notification_status: "failed",
+      notification_attempts: 3,
+      last_notification_error: "webhook 500",
+    }));
+  });
+
+  it("非 Error 例外時應以 String 記錄錯誤訊息", async () => {
+    vi.mocked(sendFirstSenderDiscordNotification).mockRejectedValue("plain string error");
+    const { supabase, update } = makeSupabase();
+    const result = await deliverFirstSenderNotification(supabase, event, email);
+
+    expect(result).toBe(false);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      last_notification_error: "plain string error",
+    }));
+  });
+
+  it("回寫 sent 失敗時應改標 failed 並回傳 false", async () => {
+    const { supabase, update } = makeSupabase(new Error("db down"));
+    const result = await deliverFirstSenderNotification(supabase, event, email);
+
+    expect(result).toBe(false);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      notification_status: "failed",
+      last_notification_error: "db down",
+    }));
   });
 });
 

@@ -46,6 +46,7 @@ describe("GET /api/gmail/watch-renew", () => {
     vi.clearAllMocks();
     vi.stubEnv("CRON_SECRET", "test-secret");
     vi.stubEnv("GMAIL_AUTOMATION_ENABLED", "true");
+    vi.stubEnv("GMAIL_WATCH_ADDRESS", "me@gmail.com");
   });
 
   it("無 Authorization header 應回傳 401", async () => {
@@ -88,6 +89,13 @@ describe("GET /api/gmail/watch-renew", () => {
     await GET(makeContext("Bearer test-secret"));
     const upsertCall = upsertChain.upsert.mock.calls[0][0];
     expect(upsertCall.last_history_id).toBe(123);
+  });
+
+  it("GMAIL_WATCH_ADDRESS 未設定時應回傳 500", async () => {
+    vi.stubEnv("GMAIL_WATCH_ADDRESS", "");
+    const res = await GET(makeContext("Bearer test-secret"));
+    expect(res.status).toBe(500);
+    expect(mockStartWatch).not.toHaveBeenCalled();
   });
 
   it("startWatch 失敗時應回傳 500", async () => {

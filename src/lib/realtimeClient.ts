@@ -31,9 +31,20 @@ export function startRealtimeConnection() {
   if (started) return;
   started = true;
 
-  const pusher = new Pusher(import.meta.env.PUBLIC_PUSHER_KEY, {
-    cluster: import.meta.env.PUBLIC_PUSHER_CLUSTER,
-  });
+  // PUBLIC_* 會送進瀏覽器，必須維持 build 時 inline（不能走 lib/env.ts 的 runtime 讀取）。
+  // 設定 PUBLIC_PUSHER_HOST 時改連自架的 Pusher 相容服務（soketi），未設定則走 Pusher 雲端。
+  const host = import.meta.env.PUBLIC_PUSHER_HOST;
+  const port = import.meta.env.PUBLIC_PUSHER_PORT;
+
+  const pusher = new Pusher(import.meta.env.PUBLIC_PUSHER_KEY, host
+    ? {
+        wsHost: host,
+        ...(port ? { wsPort: Number(port), wssPort: Number(port) } : {}),
+        forceTLS: import.meta.env.PUBLIC_PUSHER_USE_TLS === "true",
+        enabledTransports: ["ws", "wss"],
+        cluster: "",
+      }
+    : { cluster: import.meta.env.PUBLIC_PUSHER_CLUSTER });
   const channel = pusher.subscribe("gmail-channel");
 
   channel.bind("pusher:subscription_succeeded", () => {

@@ -1,9 +1,10 @@
 import type { APIRoute } from "astro";
 import { reclassifyEmails } from "../../../lib/reclassify";
+import { env } from "../../../lib/env";
 
 export const GET: APIRoute = async ({ request }) => {
   const authHeader = request.headers.get("authorization");
-  const cronSecret = import.meta.env.CRON_SECRET;
+  const cronSecret = env("CRON_SECRET");
 
   if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });

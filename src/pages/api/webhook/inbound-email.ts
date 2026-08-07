@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { MAX_PAYLOAD_BYTES, parseInboundPayload } from "../../../lib/inboundEmail";
+import { env } from "../../../lib/env";
 import {
   ensureAlias,
   findDuplicateInboundEmail,
@@ -20,7 +21,7 @@ function json(status: number, body: Record<string, unknown>): Response {
 
 export const POST: APIRoute = async ({ request }) => {
   const authHeader = request.headers.get("authorization");
-  const secret = import.meta.env.INBOUND_EMAIL_WEBHOOK_SECRET;
+  const secret = env("INBOUND_EMAIL_WEBHOOK_SECRET");
 
   // secret 未設定時一律拒絕，避免部署遺漏變成無防護的公開寫入端點
   if (!secret || !authHeader || authHeader !== `Bearer ${secret}`) {
@@ -39,7 +40,7 @@ export const POST: APIRoute = async ({ request }) => {
     return json(400, { error: "無效的 JSON" });
   }
 
-  const domain = import.meta.env.INBOUND_EMAIL_DOMAIN || DEFAULT_DOMAIN;
+  const domain = env("INBOUND_EMAIL_DOMAIN") || DEFAULT_DOMAIN;
   const parsed = parseInboundPayload(payload, domain);
   if (!parsed.ok) {
     return json(400, { error: parsed.error });

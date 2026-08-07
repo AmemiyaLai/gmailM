@@ -36,6 +36,10 @@ if (!email) {
 }
 
 const badge = categoryBadge(email.category);
+
+// 單封信的內文（body_html 平均約 31KB）不會再變動，讓瀏覽器自己快取，
+// 避免來回導覽時重複從 Supabase 讀取。用 private：內容在 Cloudflare Access 後面，不可被共用快取保存。
+Astro.response.headers.set("Cache-Control", "private, max-age=600");
 ---
 
 <SidebarLayout title={email.subject || "(無主旨)"}>

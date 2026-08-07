@@ -8,6 +8,7 @@ import type { AuthResult, TrustEvidence, TrustLevel } from "./senderTrust";
 import { classifyGmailApiError, getInboxUnreadCount } from "./gmail";
 import { recordGmailCooldown } from "./gmailSyncControl";
 import { isGmailAutomationEnabled } from "./gmailAutomation";
+import { env } from "./env";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -168,7 +169,7 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
   }
 
   const supabase = getSupabase();
-  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  const watchAddress = env("GMAIL_WATCH_ADDRESS");
   let result: GmailUnreadStatus | undefined;
   let storedState: StoredGmailUnreadState | null = null;
   if (watchAddress) {
@@ -418,11 +419,18 @@ export interface SenderStat {
   categories: string[];
 }
 
+/** 寄件者統計的單次讀取上限，理由同 MAX_UNREAD_SENDER_ROWS。 */
+const MAX_SENDER_STAT_ROWS = 2000;
+
 export async function getSenderStats(minCount = 2): Promise<SenderStat[]> {
   const supabase = getSupabase();
+  // 明確設上限：這是全表掃描，沒有 limit 時只靠 PostgREST 預設值兜底，
+  // 郵件量成長後會直接放大 Supabase egress。
   const { data } = await supabase
     .from("emails" as never)
-    .select("sender, category, received_at");
+    .select("sender, category, received_at")
+    .order("received_at", { ascending: false })
+    .limit(MAX_SENDER_STAT_ROWS);
 
   const rows = (data ?? []) as { sender: string; category: string | null; received_at: string }[];
   const map = new Map<string, { count: number; latestReceivedAt: string; categories: Set<string> }>();
@@ -459,22 +467,36 @@ export async function getSenderStats(minCount = 2): Promise<SenderStat[]> {
 }
 
 /**
- * 取得每個寄信者群組的未讀郵件數量。
- * "others" 群組以「總未讀 - 已匹配」差集計算。
+ * 未讀 sender 清單的單次讀取上限。
+ * 沒有明確 limit 時只靠 PostgREST 預設值兜底，郵件量成長後會變成流量放大器。
  */
-export async function getSenderGroupUnreadCounts(
-  groups: SenderGroup[]
-): Promise<Record<string, number>> {
-  const supabase = getSupabase();
+const MAX_UNREAD_SENDER_ROWS = 2000;
 
-  // 取得所有未讀郵件的 sender 清單（不需要完整資料）
+/**
+ * 取得所有未讀郵件的 sender 清單（不需要完整資料）。
+ * 首頁同時需要群組未讀數與各群組 top sender，兩者共用這份資料以避免重複往返 Supabase。
+ */
+export async function fetchUnreadSenders(): Promise<string[]> {
+  const supabase = getSupabase();
   const { data } = await supabase
     .from("unread_inbox_threads" as never)
-    .select("sender");
+    .select("sender")
+    .limit(MAX_UNREAD_SENDER_ROWS);
 
-  const senders: string[] = ((data ?? []) as { sender: string }[]).map(
-    (r) => r.sender
-  );
+  return ((data ?? []) as { sender: string }[]).map((r) => r.sender);
+}
+
+/**
+ * 取得每個寄信者群組的未讀郵件數量。
+ * "others" 群組以「總未讀 - 已匹配」差集計算。
+ *
+ * @param preloadedSenders 已取得的未讀 sender 清單；傳入時不再查詢 Supabase。
+ */
+export async function getSenderGroupUnreadCounts(
+  groups: SenderGroup[],
+  preloadedSenders?: string[]
+): Promise<Record<string, number>> {
+  const senders = preloadedSenders ?? (await fetchUnreadSenders());
 
   const counts: Record<string, number> = {};
   let matchedCount = 0;
@@ -564,20 +586,15 @@ export interface TopSender {
  */
 export async function getSenderGroupTopSenders(
   groups: SenderGroup[],
-  topN = 3
+  topN = 3,
+  preloadedSenders?: string[]
 ): Promise<Record<string, TopSender[]>> {
-  const supabase = getSupabase();
-
-  const { data } = await supabase
-    .from("unread_inbox_threads" as never)
-    .select("sender");
-
-  const rows = (data ?? []) as { sender: string }[];
+  const senders = preloadedSenders ?? (await fetchUnreadSenders());
 
   // 計算每個 sender 的出現次數
   const senderCountMap = new Map<string, number>();
-  for (const row of rows) {
-    senderCountMap.set(row.sender, (senderCountMap.get(row.sender) ?? 0) + 1);
+  for (const sender of senders) {
+    senderCountMap.set(sender, (senderCountMap.get(sender) ?? 0) + 1);
   }
 
   const knownGroups = groups.filter((g) => g.id !== "others");
@@ -617,8 +634,15 @@ export async function getSenderGroupTopSenders(
 }
 
 /**
+ * 分析頁單次最多讀取的郵件筆數。
+ * 這個迴圈原本沒有上限，郵件量成長後 /analytics?range=all 會一路把整張表拉進 Vercel，
+ * 是 Supabase egress 失控的主要風險點，故設硬上限；超過的部分以最舊的資料為準截斷。
+ */
+const MAX_ANALYTICS_ROWS = 20_000;
+
+/**
  * 依分析期間取回所有郵件。Supabase 單次回傳上限為 1,000 筆，故採分頁讀取。
- * 僅讀取統計與關鍵詞分析需要的欄位，正文不會傳到瀏覽器。
+ * 僅讀取統計與關鍵詞分析需要的欄位；正文（body_plain）不讀，見 emailAnalytics 的關鍵字說明。
  */
 export async function getAnalyticsEmails(range: AnalyticsRange | Pick<AnalyticsRange, "from" | "to">): Promise<AnalyticsEmail[]> {
   const supabase = getSupabase();
@@ -626,10 +650,10 @@ export async function getAnalyticsEmails(range: AnalyticsRange | Pick<AnalyticsR
   const all: AnalyticsEmail[] = [];
   const bounds = rangeToQueryBounds(range);
 
-  for (let offset = 0; ; offset += pageSize) {
+  for (let offset = 0; offset < MAX_ANALYTICS_ROWS; offset += pageSize) {
     let query = supabase
       .from("emails" as never)
-      .select("sender, received_at, category, is_read, is_important, subject, snippet, body_plain")
+      .select("sender, received_at, category, is_read, is_important, subject, snippet")
       .order("received_at", { ascending: true })
       .range(offset, offset + pageSize - 1);
     if (bounds.from) query = query.gte("received_at", bounds.from);

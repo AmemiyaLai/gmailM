@@ -2,8 +2,15 @@ import type { APIRoute } from "astro";
 import { reconcileUnreadInbox } from "../../../lib/emailSync";
 import { classifyGmailApiError } from "../../../lib/gmail";
 import { getSupabase } from "../../../lib/supabase";
-import { acquireGmailSyncLease, recordGmailCooldown, releaseGmailSyncLease } from "../../../lib/gmailSyncControl";
+import {
+  acquireGmailSyncLease,
+  clearGmailFailures,
+  handleGmailSyncFailure,
+  recordGmailCooldown,
+  releaseGmailSyncLease,
+} from "../../../lib/gmailSyncControl";
 import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
+import { env } from "../../../lib/env";
 
 const RECONCILE_BATCH_SIZE = 20;
 
@@ -12,7 +19,7 @@ export const POST: APIRoute = async () => {
   // while Gmail automation is paused. This also keeps a missing migration from causing 500s.
   if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
 
-  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  const watchAddress = env("GMAIL_WATCH_ADDRESS");
   const supabase = getSupabase();
   const admission = watchAddress
     ? await acquireGmailSyncLease(supabase, watchAddress)
@@ -25,6 +32,7 @@ export const POST: APIRoute = async () => {
   }
   try {
     const result = await reconcileUnreadInbox(RECONCILE_BATCH_SIZE);
+    if (watchAddress) await clearGmailFailures(supabase, watchAddress).catch(() => undefined);
     return new Response(JSON.stringify({ status: result.completed ? "ok" : "reconciling", ...result }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -41,6 +49,7 @@ export const POST: APIRoute = async () => {
       });
     }
     console.error("gmail_manual_sync_failed", { status: info.status, message: info.message });
+    await handleGmailSyncFailure(supabase, watchAddress, info.message, "manualSync");
     return new Response(
       JSON.stringify({ error: err instanceof Error ? info.message : "Unknown error" }),
       { status: 500, headers: { "Content-Type": "application/json" } },

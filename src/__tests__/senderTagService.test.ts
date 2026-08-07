@@ -16,6 +16,17 @@ vi.mock("../lib/senderAddress", () => ({
 import { refreshSenderTags, setManualSenderTag, getSenderTags } from "../lib/senderTagService";
 import { judgeSenderTag } from "../lib/gemini";
 
+/**
+ * select() 的回傳值：可直接 await，也可再串一次 .limit()。
+ * refreshSenderTags 對 emails 全表掃描設了讀取上限，故 select 之後會多一段 .limit()。
+ */
+function selectResult(result: unknown) {
+  return {
+    limit: vi.fn().mockResolvedValue(result),
+    then: (resolve: (v: unknown) => unknown) => resolve(result),
+  };
+}
+
 function createMockSupabase(responses: Record<string, unknown>) {
   const chainable: Record<string, ReturnType<typeof vi.fn>> = {};
 
@@ -68,16 +79,16 @@ describe("refreshSenderTags()", () => {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
           return {
-            select: vi.fn().mockResolvedValue({ data: emails, error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })),
           };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: existingTags, error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: existingTags, error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -88,7 +99,7 @@ describe("refreshSenderTags()", () => {
   it("emails 查詢失敗時應拋出錯誤", async () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation(() => ({
-        select: vi.fn().mockResolvedValue({ data: null, error: { message: "db error" } }),
+        select: vi.fn().mockReturnValue(selectResult({ data: null, error: { message: "db error" } })),
       })),
     };
 
@@ -99,9 +110,9 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
         }
-        return { select: vi.fn().mockResolvedValue({ data: null, error: { message: "tags error" } }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: null, error: { message: "tags error" } })) };
       }),
     };
 
@@ -120,15 +131,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: existingTags, error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: existingTags, error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -147,15 +158,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -173,15 +184,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -201,15 +212,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -230,15 +241,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -260,15 +271,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -285,15 +296,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -310,15 +321,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -335,15 +346,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: null, error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: null, error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -363,15 +374,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: existingTags, error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: existingTags, error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -384,15 +395,15 @@ describe("refreshSenderTags()", () => {
     const mockSupabase = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === "emails") {
-          return { select: vi.fn().mockResolvedValue({ data: emails, error: null }) };
+          return { select: vi.fn().mockReturnValue(selectResult({ data: emails, error: null })) };
         }
         if (table === "sender_tags") {
           return {
-            select: vi.fn().mockResolvedValue({ data: [], error: null }),
+            select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })),
             upsert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
-        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+        return { select: vi.fn().mockReturnValue(selectResult({ data: [], error: null })) };
       }),
     };
 
@@ -438,7 +449,7 @@ describe("getSenderTags()", () => {
     ];
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({ data: rows, error: null }),
+        select: vi.fn().mockReturnValue(selectResult({ data: rows, error: null })),
       }),
     };
 
@@ -452,7 +463,7 @@ describe("getSenderTags()", () => {
   it("空資料應回傳空 Map", async () => {
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({ data: null, error: null }),
+        select: vi.fn().mockReturnValue(selectResult({ data: null, error: null })),
       }),
     };
 
@@ -465,7 +476,7 @@ describe("getSenderTags()", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const mockSupabase = {
       from: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({ data: null, error: { message: "db select error" } }),
+        select: vi.fn().mockReturnValue(selectResult({ data: null, error: { message: "db select error" } })),
       }),
     };
 

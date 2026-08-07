@@ -1,4 +1,5 @@
 import { categoryBadge } from "./categoryBadge";
+import { env } from "./env";
 
 export interface DiscordNotifiableEmail {
   threadId: string;
@@ -39,11 +40,11 @@ function urgencyLabel(labels: string[]): string {
 export async function sendDiscordNotification(
   email: DiscordNotifiableEmail,
 ): Promise<void> {
-  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
   if (!webhookUrl) return;
 
   const badge = categoryBadge(email.category);
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
 
   const response = await fetch(webhookUrl, {
     method: "POST",
@@ -74,11 +75,11 @@ export async function sendDiscordNotification(
 const DIGEST_MAX_LINES = 15;
 
 export async function sendFirstSenderDigestNotification(entries: FirstSenderDigestEntry[]): Promise<void> {
-  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
   if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is not configured");
   if (entries.length === 0) return;
 
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
   const lines = entries.slice(0, DIGEST_MAX_LINES).map(
     (entry) => `• ${truncate(entry.senderDisplay || entry.senderAddress, 60)}\n　└ \`${entry.senderAddress}\``,
   );
@@ -110,10 +111,10 @@ export async function sendFirstSenderDigestNotification(entries: FirstSenderDige
 
 /** @deprecated 即時單封通知已停用（改為每日兩次摘要）；保留僅為相容，請勿新增呼叫。 */
 export async function sendFirstSenderDiscordNotification(email: FirstSenderDiscordEmail): Promise<void> {
-  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
   if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is not configured");
 
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -189,7 +190,7 @@ function truncate(text: string, max: number): string {
 }
 
 export function buildCleanupReviewEmbed(payload: CleanupReviewPayload): Record<string, unknown> {
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
   const copy = CLEANUP_COPY[payload.action];
   const lines = payload.emails.map(
     (email, i) => `**${i + 1}.** ${truncate(email.subject || "(無主旨)", 80)}\n　└ ${truncate(email.sender || "(未知)", 60)}　🔑 \`${email.keyword}\``,
@@ -227,8 +228,8 @@ function cleanupComponents(action: CleanupAction, reviewId: string): Record<stri
  * 回傳 Discord message id。
  */
 export async function sendCleanupReview(payload: CleanupReviewPayload): Promise<string | null> {
-  const token = import.meta.env.DISCORD_BOT_TOKEN;
-  const channelId = import.meta.env.DISCORD_CLEANUP_CHANNEL_ID;
+  const token = env("DISCORD_BOT_TOKEN");
+  const channelId = env("DISCORD_CLEANUP_CHANNEL_ID");
   if (!token || !channelId) {
     throw new Error("DISCORD_BOT_TOKEN 或 DISCORD_CLEANUP_CHANNEL_ID 未設定，無法送出清理審核訊息");
   }
@@ -319,6 +320,55 @@ export function buildCleanupResultEmbed(
   };
 }
 
+export interface GmailBreakerAlert {
+  watchAddress: string;
+  consecutiveFailures: number;
+  firstFailureAt: string | null;
+  cooldownUntil: string | null;
+  lastError: string;
+}
+
+const BREAKER_ALERT_COLOR = 0xfaa61a; // amber — 運維警告，與重要郵件的紅色區隔
+
+/**
+ * Gmail 同步熔斷警告。只在 recordGmailFailure 回報 shouldNotify 時發送，
+ * 也就是同一段故障最多一則，避免通知本身變成另一種風暴。
+ */
+export async function sendGmailBreakerAlert(alert: GmailBreakerAlert): Promise<void> {
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
+  if (!webhookUrl) return;
+
+  const siteUrl = env("SITE_URL");
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [
+        {
+          title: "⚠️ Gmail 同步已熔斷",
+          description:
+            "同步連續失敗超過設定的時間窗，已強制進入冷卻以停止錯誤流量。冷卻期間所有同步入口都會被擋下。",
+          color: BREAKER_ALERT_COLOR,
+          fields: [
+            { name: "監控信箱", value: alert.watchAddress || "(未設定)" },
+            { name: "連續失敗次數", value: String(alert.consecutiveFailures), inline: true },
+            {
+              name: "首次失敗",
+              value: alert.firstFailureAt ?? "(未知)",
+              inline: true,
+            },
+            { name: "冷卻至", value: alert.cooldownUntil ?? "(未設定)" },
+            { name: "最後錯誤", value: truncate(alert.lastError || "(無訊息)", 500) },
+            ...(siteUrl ? [{ name: "管理頁面", value: `[前往查看](${siteUrl})` }] : []),
+          ],
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
+}
+
 export interface InboundDigestPayload {
   total: number;
   unreadTotal: number;
@@ -332,10 +382,10 @@ export interface InboundDigestPayload {
 const INBOUND_DIGEST_COLOR = 0x5865f2; // blurple — 站點收件匣摘要
 
 export async function sendInboundDigest(digest: InboundDigestPayload): Promise<void> {
-  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
   if (!webhookUrl) return;
 
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
   const aliasLines = digest.perAlias.map(
     (item) => `\`${item.alias}\`（${item.label}）× ${item.count}`,
   );
@@ -394,10 +444,10 @@ export interface EmailSummaryPayload {
 const SUMMARY_COLOR = 0x57f287; // green — 與重要通知的紅色區隔
 
 export async function sendDiscordSummary(summary: EmailSummaryPayload): Promise<void> {
-  const webhookUrl = import.meta.env.DISCORD_WEBHOOK_URL;
+  const webhookUrl = env("DISCORD_WEBHOOK_URL");
   if (!webhookUrl) return;
 
-  const siteUrl = import.meta.env.SITE_URL;
+  const siteUrl = env("SITE_URL");
 
   const res = await fetch(webhookUrl, {
     method: "POST",

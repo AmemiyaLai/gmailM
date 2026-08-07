@@ -12,6 +12,7 @@ import {
 } from "../../../lib/gmail";
 import {
   acquireGmailSyncLease,
+  handleGmailSyncFailure,
   recordGmailCooldown,
   releaseGmailSyncLease,
 } from "../../../lib/gmailSyncControl";
@@ -25,6 +26,7 @@ import { refreshSenderTags } from "../../../lib/senderTagService";
 import { evaluateAndStoreTrust } from "../../../lib/senderTrustService";
 import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub";
 import { isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
+import { env } from "../../../lib/env";
 
 interface SyncStateRow {
   watch_address: string;
@@ -33,14 +35,14 @@ interface SyncStateRow {
   cooldown_until?: string | null;
 }
 
-const AUDIENCE = import.meta.env.PUBSUB_AUDIENCE;
+const AUDIENCE = env("PUBSUB_AUDIENCE");
 
 async function verifyPubSubToken(
   token: string,
 ): Promise<boolean> {
   // 訂閱上明確指定的 push service account。Google 不保證能從 token 的其他欄位
   // 推導出這個值，唯一可靠的做法是從設定讀取預期值後比對。
-  const expectedEmail = import.meta.env.PUBSUB_PUSH_SERVICE_ACCOUNT;
+  const expectedEmail = env("PUBSUB_PUSH_SERVICE_ACCOUNT");
 
   try {
     const client = new OAuth2Client();
@@ -335,6 +337,7 @@ export const POST: APIRoute = async ({ request }) => {
           return new Response(null, { status: 204 });
         }
         console.error("gmail_history_recovery_failed", { status: info.status, message: info.message });
+        await handleGmailSyncFailure(supabase, emailAddress, info.message, "historyRecovery");
         await releaseLease();
         return new Response("History recovery failed", { status: 500 });
       }
@@ -350,6 +353,7 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response(null, { status: 204 });
     }
     console.error("gmail_list_history_failed", { status: info.status, message: info.message });
+    await handleGmailSyncFailure(supabase, emailAddress, info.message, "listHistory");
     await releaseLease();
     return new Response("listHistory failed", { status: 500 });
   }
@@ -362,6 +366,7 @@ export const POST: APIRoute = async ({ request }) => {
       return new Response(null, { status: 204 });
     }
     console.error("部分郵件處理失敗，保留 last_history_id 以待 Pub/Sub 重送");
+    await handleGmailSyncFailure(supabase, emailAddress, "部分郵件處理失敗", "processMessages");
     await releaseLease();
     return new Response("Partial failure", { status: 500 });
   }
@@ -372,11 +377,16 @@ export const POST: APIRoute = async ({ request }) => {
       last_history_id: Number(latestHistoryId),
       cooldown_until: null,
       last_sync_error: null,
+      // 同步成功即重設熔斷計數，讓下一段故障能重新累積並重新發出警告
+      consecutive_failures: 0,
+      first_failure_at: null,
+      breaker_notified_at: null,
       updated_at: new Date().toISOString(),
     } as never)
     .eq("watch_address", emailAddress);
   if (cursorError) {
     console.error("gmail_cursor_update_failed", { message: cursorError.message });
+    await handleGmailSyncFailure(supabase, emailAddress, cursorError.message, "cursorUpdate");
     await releaseLease();
     return new Response("Cursor update failed", { status: 500 });
   }

@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { deliverFirstSenderNotification, type FirstSenderEvent } from "../../../lib/firstSender";
+import { env } from "../../../lib/env";
 
 interface RetryRow extends FirstSenderEvent {
   emails: {
@@ -15,7 +16,7 @@ interface RetryRow extends FirstSenderEvent {
 }
 
 export const GET: APIRoute = async ({ request }) => {
-  if (request.headers.get("authorization") !== `Bearer ${import.meta.env.CRON_SECRET}`) {
+  if (request.headers.get("authorization") !== `Bearer ${env("CRON_SECRET")}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 

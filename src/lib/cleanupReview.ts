@@ -326,8 +326,9 @@ export const STUCK_REVIEW_THRESHOLD_MS = 5 * 60 * 1000;
 /**
  * 安全網：補做那些「已按下確認、但處理過程被中斷」的審核單。
  *
- * 按鈕的實際處理跑在 waitUntil 的背景工作裡，理論上會完成，但若執行實例
- * 在中途被回收（部署、逾時、當機），審核單會停在 status=approved 而 processed_count 為 null。
+ * 按鈕的實際處理跑在回應送出後的背景工作裡（Vercel 走 waitUntil，自托管直接背景執行），
+ * 理論上會完成，但若行程在中途中斷（部署、逾時、當機），
+ * 審核單會停在 status=approved 而 processed_count 為 null。
  * 這支由 cron 呼叫，把這些補做完，避免郵件卡在「已核准但沒動作」的狀態。
  */
 export async function resumeStuckReviews(): Promise<{ resumed: number; processed: number }> {

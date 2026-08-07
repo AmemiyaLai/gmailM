@@ -3,6 +3,8 @@ import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { approveReview, getReview, rejectReview } from "../../../lib/cleanupReview";
 import { buildCleanupResultEmbed, editInteractionMessage } from "../../../lib/discord";
+import { env } from "../../../lib/env";
+import { isSelfHosted } from "../../../lib/deployTarget";
 
 /**
  * Discord Interactions Endpoint。
@@ -59,10 +61,17 @@ function ephemeral(content: string): Response {
 
 /**
  * 讓背景工作在回應送出後繼續執行。
- * 回傳非 undefined 代表呼叫端必須自行 await（本機開發等沒有 waitUntil 的環境，
- * 那些環境也沒有 3 秒限制的顧慮）。
+ * 回傳非 undefined 代表呼叫端必須自行 await —— 只有本機開發會走到，
+ * 那個環境沒有 3 秒限制的顧慮。
  */
 function runAfterResponse(work: Promise<unknown>): Promise<unknown> | undefined {
+  if (isSelfHosted()) {
+    // 自托管是長駐 Node process，回應送出後不會被凍結，直接讓工作在背景跑完。
+    // 這裡不能退回「同步 await」：那會讓回應必然超過 Discord 的 3 秒限制。
+    void work.catch((err) => console.error("[discord] interaction 背景工作失敗", err));
+    return undefined;
+  }
+
   try {
     waitUntil(work);
     return undefined;
@@ -119,7 +128,7 @@ async function handleCleanupDecision(
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const publicKey = import.meta.env.DISCORD_PUBLIC_KEY;
+  const publicKey = env("DISCORD_PUBLIC_KEY");
   if (!publicKey) {
     console.error("Discord interactions: DISCORD_PUBLIC_KEY 未設定");
     return new Response("Not configured", { status: 500 });

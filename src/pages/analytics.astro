@@ -17,6 +17,10 @@ const chartData = JSON.stringify({
   keywords: analytics.keywords,
 }).replace(/</g, "\\u003c");
 const rangeLabel = range.preset === "all" ? "所有已同步郵件" : `${range.from} 至 ${range.to}`;
+
+// 這是全站最貴的一頁（需掃描整個期間的郵件），而統計數據變動緩慢。
+// 讓瀏覽器快取 5 分鐘，避免來回切換分頁時反覆重跑全表掃描。
+Astro.response.headers.set("Cache-Control", "private, max-age=300");
 ---
 
 <SidebarLayout title="郵件分析 — Gmail 即時監控面板" activeView="analytics">

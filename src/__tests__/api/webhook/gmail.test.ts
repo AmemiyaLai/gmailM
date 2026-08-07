@@ -54,6 +54,17 @@ const { mockEvaluateAndStoreTrust } = vi.hoisted(() => ({
   mockEvaluateAndStoreTrust: vi.fn().mockResolvedValue({ level: "unverified" }),
 }));
 
+const { mockAcquireGmailSyncLease } = vi.hoisted(() => ({
+  mockAcquireGmailSyncLease: vi.fn().mockResolvedValue({
+    status: "acquired", token: "lease-token", lastHistoryId: null, retryAfter: null,
+  }),
+}));
+
+vi.mock("../../../lib/gmailSyncControl", async (importOriginal) => ({
+  ...(await importOriginal()),
+  acquireGmailSyncLease: mockAcquireGmailSyncLease,
+}));
+
 vi.mock("../../../lib/senderTrustService", () => ({
   evaluateAndStoreTrust: mockEvaluateAndStoreTrust,
 }));
@@ -136,9 +147,11 @@ function makeContext(authHeader?: string, body?: object) {
   return { request } as never;
 }
 
-function setupSupabase(opts?: { lastHistoryId?: number | null; existingEmailIds?: string[] }) {
+function setupSupabase(opts?: { lastHistoryId?: number | null; cooldownUntil?: string | null; existingEmailIds?: string[] }) {
   const selectResult = {
-    data: opts?.lastHistoryId !== undefined ? { last_history_id: opts.lastHistoryId } : null,
+    data: opts?.lastHistoryId !== undefined || opts?.cooldownUntil !== undefined
+      ? { last_history_id: opts?.lastHistoryId ?? null, cooldown_until: opts?.cooldownUntil ?? null }
+      : null,
     error: null,
   };
   const existing = new Set(opts?.existingEmailIds ?? []);
@@ -681,6 +694,82 @@ describe("POST /api/webhook/gmail", () => {
 
       expect(res.status).toBe(400);
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe("租約與游標處理", () => {
+    beforeEach(() => {
+      mockAcquireGmailSyncLease.mockResolvedValue({
+        status: "acquired", token: "lease-token", lastHistoryId: null, retryAfter: null,
+      });
+    });
+
+    it("lease 非 acquired 時應回 204 並帶 Retry-After", async () => {
+      setupSupabase({ lastHistoryId: 50 });
+      mockAcquireGmailSyncLease.mockResolvedValueOnce({
+        status: "cooldown", token: null, lastHistoryId: null, retryAfter: "2026-08-01T00:00:00Z",
+      });
+
+      const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+      expect(res.status).toBe(204);
+      expect(res.headers.get("Retry-After")).toBe("2026-08-01T00:00:00Z");
+      expect(mockListHistory).not.toHaveBeenCalled();
+    });
+
+    it("acquire lease 失敗時應回 500", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      setupSupabase({ lastHistoryId: 50 });
+      mockAcquireGmailSyncLease.mockRejectedValueOnce(new Error("lease rpc down"));
+
+      const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+      expect(res.status).toBe(500);
+      expect(consoleSpy).toHaveBeenCalledWith("gmail_sync_lease_acquire_failed", expect.objectContaining({
+        message: "lease rpc down",
+      }));
+      consoleSpy.mockRestore();
+    });
+
+    it("historyId 未超前時應直接 ACK 204", async () => {
+      setupSupabase({ lastHistoryId: 200 });
+
+      const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+      expect(res.status).toBe(204);
+      expect(mockListHistory).not.toHaveBeenCalled();
+    });
+
+    it("cooldown 未過期時應直接 ACK 204", async () => {
+      setupSupabase({
+        lastHistoryId: 50,
+        cooldownUntil: new Date(Date.now() + 60_000).toISOString(),
+      });
+
+      const res = await POST(makeContext("Bearer valid", { emailAddress: "test@gmail.com", historyId: "200" }));
+
+      expect(res.status).toBe(204);
+      expect(mockListHistory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("OIDC token 額外驗證分支", () => {
+    it("PUBSUB_PUSH_SERVICE_ACCOUNT 未設定時應回 401", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubEnv("PUBSUB_PUSH_SERVICE_ACCOUNT", "");
+
+      const res = await POST(makeContext("Bearer valid", envelope({ emailAddress: "a", historyId: "1" })));
+
+      expect(res.status).toBe(401);
+      consoleSpy.mockRestore();
+    });
+
+    it("verifyIdToken 回傳 null payload 時應回 401", async () => {
+      mockVerifyIdToken.mockResolvedValueOnce({ getPayload: () => null });
+
+      const res = await POST(makeContext("Bearer valid", envelope({ emailAddress: "a", historyId: "1" })));
+
+      expect(res.status).toBe(401);
     });
   });
 });

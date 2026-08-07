@@ -12,6 +12,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "start": "node ./dist/server/entry.mjs",
     "lint": "eslint .",
     "check:routes": "node scripts/check-routes.mjs",
     "check:all": "npm run type-check && npm run test:unit:coverage && npm run check:routes && npm run build",
@@ -27,6 +28,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@astrojs/node": "^11.1.0",
     "@astrojs/vercel": "^11.0.3",
     "@google/genai": "^2.13.0",
     "@supabase/supabase-js": "^2.110.8",

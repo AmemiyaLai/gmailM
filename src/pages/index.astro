@@ -15,12 +15,17 @@ import {
   listEmails,
   getSenderGroupUnreadCounts,
   getSenderGroupTopSenders,
+  fetchUnreadSenders,
 } from "../lib/emailQueries";
 import { getPendingReviewCount } from "../lib/cleanupReview";
 import { parseEmailFilterParams, buildFilterHref } from "../lib/emailFilters";
 import { SENDER_GROUPS } from "../lib/senderGroups";
 
 const filters = parseEmailFilterParams(Astro.url);
+
+// 群組未讀數與各群組 top sender 需要同一份未讀 sender 清單，先取一次共用，
+// 避免對 unread_inbox_threads 重複往返（Supabase egress）。
+const unreadSenders = await fetchUnreadSenders();
 
 const [summary, unreadStatus, todayCount, categoryCounts, importantEmails, { emails: recentUnread }, groupUnreadCounts, groupTopSenders, pendingReviews] =
   await Promise.all([
@@ -38,8 +43,8 @@ const [summary, unreadStatus, todayCount, categoryCounts, importantEmails, { ema
       onlyUnread: true,
       limit: 10,
     }),
-    getSenderGroupUnreadCounts(SENDER_GROUPS),
-    getSenderGroupTopSenders(SENDER_GROUPS, 8),
+    getSenderGroupUnreadCounts(SENDER_GROUPS, unreadSenders),
+    getSenderGroupTopSenders(SENDER_GROUPS, 8, unreadSenders),
     // 清理審核是附加功能，查詢失敗（例如 migration 未套用）不該讓整個儀表板掛掉；
     // 明確的錯誤提示留給 /cleanup 與 /reviews 頁面呈現。
     getPendingReviewCount().catch((err) => {

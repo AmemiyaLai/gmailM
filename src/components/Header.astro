@@ -279,7 +279,9 @@ const gmailAutomationEnabled = isGmailAutomationEnabled();
         gmailThreadsUnread?: number;
       } = {};
       let totalReconciled = 0;
-      for (let batch = 0; batch < 10; batch++) {
+      // 每一批都會在伺服器端跑一次全量對帳查詢，批次開太多會把單次點擊放大成
+      // 十來輪 Supabase 往返。剩餘的量交給下一次同步處理。
+      for (let batch = 0; batch < 3; batch++) {
         const res = await fetch("/api/gmail/sync", { method: "POST" });
         result = await res.json();
         if (!res.ok || result.error) throw new Error(result.error || "同步失敗");
@@ -295,7 +297,9 @@ const gmailAutomationEnabled = isGmailAutomationEnabled();
         ? `同步完成（${result.gmailThreadsUnread ?? 0} 個未讀討論串）`
         : `已校正 ${totalReconciled} 封，稍後將繼續`;
 
-      if (totalReconciled > 0 || result.completed) {
+      // 只有真的校正到郵件才重新載入。原本 result.completed 幾乎恆為 true，
+      // 導致每次同步都無謂地整頁重載，再跑一輪首頁的全部查詢。
+      if (totalReconciled > 0) {
         window.setTimeout(() => {
           navigate(window.location.pathname + window.location.search, { history: "replace" });
         }, 500);

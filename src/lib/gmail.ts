@@ -1,16 +1,17 @@
 import { google } from "googleapis";
+import { env } from "./env";
 
 function getOAuth2Client() {
   return new google.auth.OAuth2(
-    import.meta.env.GMAIL_OAUTH_CLIENT_ID,
-    import.meta.env.GMAIL_OAUTH_CLIENT_SECRET,
+    env("GMAIL_OAUTH_CLIENT_ID"),
+    env("GMAIL_OAUTH_CLIENT_SECRET"),
   );
 }
 
 function getGmailClient() {
   const oauth2Client = getOAuth2Client();
   oauth2Client.setCredentials({
-    refresh_token: import.meta.env.GMAIL_OAUTH_REFRESH_TOKEN,
+    refresh_token: env("GMAIL_OAUTH_REFRESH_TOKEN"),
   });
   // Webhook/Pub/Sub 已有自己的節流策略；禁止 gaxios 再把單次 429 放大成多次請求。
   return google.gmail({ version: "v1", auth: oauth2Client, retry: false, timeout: 10_000 });
@@ -381,7 +382,7 @@ export async function startWatch(): Promise<{
   expiration: string;
 }> {
   const gmail = getGmailClient();
-  const topicName = `projects/${import.meta.env.GCP_PROJECT_ID}/topics/${import.meta.env.PUBSUB_TOPIC}`;
+  const topicName = `projects/${env("GCP_PROJECT_ID")}/topics/${env("PUBSUB_TOPIC")}`;
 
   const res = await gmail.users.watch({
     userId: "me",

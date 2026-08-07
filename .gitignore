@@ -32,6 +32,9 @@ dev_*.log
 Thumbs.db
 Desktop.ini
 
+# ===== 代理工具本機狀態 =====
+.omo/
+
 # ===== 編輯器設定 =====
 .idea/
 .vscode/settings.json

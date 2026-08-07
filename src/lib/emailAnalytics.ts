@@ -6,7 +6,6 @@ export interface AnalyticsEmail {
   is_important: boolean | null;
   subject: string | null;
   snippet: string | null;
-  body_plain: string | null;
 }
 
 export type AnalyticsRangePreset = "all" | "7d" | "30d" | "90d" | "custom";
@@ -128,7 +127,9 @@ export function buildEmailAnalytics(emails: AnalyticsEmail[], range: AnalyticsRa
     } else senders.set(email.sender, { count: 1, latestReceivedAt: email.received_at });
     if (!email.is_read) unread++;
     if (email.is_important) important++;
-    for (const keyword of extractKeywords([email.subject, email.snippet, email.body_plain].filter(Boolean).join(" "))) keywords.set(keyword, (keywords.get(keyword) ?? 0) + 1);
+    // 只用 subject + snippet 斷詞：正文（body_plain）平均 2.6KB，全表拉進來做關鍵字分析
+    // 是單次請求最大的 Supabase egress 來源，而 snippet 已涵蓋信件開頭約 200 字。
+    for (const keyword of extractKeywords([email.subject, email.snippet].filter(Boolean).join(" "))) keywords.set(keyword, (keywords.get(keyword) ?? 0) + 1);
   }
 
   return {

@@ -1,0 +1,42 @@
+[Unit]
+Description=Gmail 監控面板（Astro SSR / @astrojs/node standalone）
+Documentation=https://github.com/AmemiyaLai/gmailM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gmailm
+Group=gmailm
+WorkingDirectory=/opt/gmailm
+
+# 只監聽 loopback —— 對外一律經由 cloudflared tunnel，主機不需開任何 inbound 埠
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=1008
+
+# 機密放在這裡，權限 600、屬主 root。務必包含 DEPLOY_TARGET=node，
+# 否則 runtime 會走 Vercel 分支（Discord interaction 會超過 3 秒限制）。
+EnvironmentFile=/etc/gmailm/env
+
+ExecStart=/usr/bin/node ./dist/server/entry.mjs
+Restart=always
+RestartSec=5
+
+# 崩潰迴圈保護：10 分鐘內重啟超過 5 次就停下來，避免無限重啟洗爆日誌與外部 API 配額
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gmailm
+
+# 基本加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/gmailm
+
+[Install]
+WantedBy=multi-user.target

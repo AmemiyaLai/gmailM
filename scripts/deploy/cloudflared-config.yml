@@ -1,0 +1,24 @@
+# Cloudflare Tunnel 設定 —— 放到 /etc/cloudflared/config.yml
+#
+# 主機完全不開 inbound 埠：cloudflared 主動建立出站連線到 Cloudflare 邊緣，
+# 因此不必處理 OCI Security List，也不必處理 Oracle 映像內建的 iptables 規則
+# （這兩層都擋掉 80/443，是自架在 OCI 上最常見的卡關點）。
+#
+# <TUNNEL_ID> 由 `cloudflared tunnel create gmailm` 產生，憑證檔同時寫到 credentials-file。
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+# 邊緣連線數，單站點 2 條足夠（預設 4）
+ha-connections: 2
+
+ingress:
+  - hostname: gmailm.autodesignlab.org
+    service: http://127.0.0.1:1008
+    originRequest:
+      # Gemini 摘要與批次清理可能跑得久，預設 30s 會被截斷
+      connectTimeout: 30s
+      noTLSVerify: false
+
+  # ingress 規則必須以 catch-all 結尾，否則 cloudflared 拒絕啟動
+  - service: http_status:404

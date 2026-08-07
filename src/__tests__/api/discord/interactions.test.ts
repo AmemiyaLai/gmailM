@@ -71,6 +71,8 @@ describe("POST /api/discord/interactions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("DISCORD_PUBLIC_KEY", publicKeyHex);
+    // 預設走 Vercel 目標，避免受外部環境的 DEPLOY_TARGET 影響
+    vi.stubEnv("DEPLOY_TARGET", "");
     mockEditInteractionMessage.mockResolvedValue(undefined);
     // 預設模擬非 Vercel 環境：waitUntil 不可用 → route 會同步等背景工作完成，
     // 讓測試能直接斷言回寫結果。
@@ -127,6 +129,18 @@ describe("POST /api/discord/interactions", () => {
     expect(mockEditInteractionMessage).not.toHaveBeenCalled();
 
     resolveApprove({ status: "approved", action: "trash", processedCount: 1, failedCount: 0 });
+  });
+
+  it("自托管環境應直接背景執行，不呼叫 waitUntil 也不阻塞回應", async () => {
+    vi.stubEnv("DEPLOY_TARGET", "node");
+    // waitUntil 在自托管下不該被碰到；若被呼叫會拋錯而讓測試失敗
+    mockApproveReview.mockReturnValue(new Promise(() => {})); // 永不 resolve
+
+    const res = await POST(makeContext(componentInteraction("cleanup:approve:review-1")));
+
+    expect(await res.json()).toEqual({ type: 6 });
+    expect(mockWaitUntil).not.toHaveBeenCalled();
+    expect(mockEditInteractionMessage).not.toHaveBeenCalled();
   });
 
   it("確認刪除完成後應回寫訊息並移除按鈕", async () => {

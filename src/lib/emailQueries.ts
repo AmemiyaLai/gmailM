@@ -8,6 +8,7 @@ import type { AuthResult, TrustEvidence, TrustLevel } from "./senderTrust";
 import { classifyGmailApiError, getInboxUnreadCount } from "./gmail";
 import { recordGmailCooldown } from "./gmailSyncControl";
 import { isGmailAutomationEnabled } from "./gmailAutomation";
+import { env } from "./env";
 
 /**
  * 讀取的欄位/資料表（emails.is_important、email_summaries）來自
@@ -168,7 +169,7 @@ export async function getGmailUnreadStatus(): Promise<GmailUnreadStatus> {
   }
 
   const supabase = getSupabase();
-  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  const watchAddress = env("GMAIL_WATCH_ADDRESS");
   let result: GmailUnreadStatus | undefined;
   let storedState: StoredGmailUnreadState | null = null;
   if (watchAddress) {

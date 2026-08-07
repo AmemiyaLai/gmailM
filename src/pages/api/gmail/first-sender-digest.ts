@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { sendFirstSenderDigest } from "../../../lib/firstSender";
+import { env } from "../../../lib/env";
 
 /**
  * 由外部排程（GitHub Actions，每日 07:00 / 19:00 台北時間）帶
@@ -8,7 +9,7 @@ import { sendFirstSenderDigest } from "../../../lib/firstSender";
  * 把累積的首次寄件者事件彙整成一則 Discord 摘要。
  */
 export const GET: APIRoute = async ({ request }) => {
-  if (request.headers.get("authorization") !== `Bearer ${import.meta.env.CRON_SECRET}`) {
+  if (request.headers.get("authorization") !== `Bearer ${env("CRON_SECRET")}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 

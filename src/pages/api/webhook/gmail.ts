@@ -26,6 +26,7 @@ import { refreshSenderTags } from "../../../lib/senderTagService";
 import { evaluateAndStoreTrust } from "../../../lib/senderTrustService";
 import { parseGmailNotification, type PubSubPushBody } from "../../../lib/pubsub";
 import { isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
+import { env } from "../../../lib/env";
 
 interface SyncStateRow {
   watch_address: string;
@@ -34,14 +35,14 @@ interface SyncStateRow {
   cooldown_until?: string | null;
 }
 
-const AUDIENCE = import.meta.env.PUBSUB_AUDIENCE;
+const AUDIENCE = env("PUBSUB_AUDIENCE");
 
 async function verifyPubSubToken(
   token: string,
 ): Promise<boolean> {
   // 訂閱上明確指定的 push service account。Google 不保證能從 token 的其他欄位
   // 推導出這個值，唯一可靠的做法是從設定讀取預期值後比對。
-  const expectedEmail = import.meta.env.PUBSUB_PUSH_SERVICE_ACCOUNT;
+  const expectedEmail = env("PUBSUB_PUSH_SERVICE_ACCOUNT");
 
   try {
     const client = new OAuth2Client();

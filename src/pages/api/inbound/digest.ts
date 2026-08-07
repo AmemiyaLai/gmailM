@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { sendInboundDigest } from "../../../lib/discord";
 import { getInboundDigestStats } from "../../../lib/inboundEmailService";
+import { env } from "../../../lib/env";
 
 /**
  * 站點收件匣 Discord 摘要。
@@ -13,7 +14,7 @@ import { getInboundDigestStats } from "../../../lib/inboundEmailService";
 const DIGEST_WINDOW_MS = 13 * 60 * 60 * 1000;
 
 export const GET: APIRoute = async ({ request }) => {
-  if (request.headers.get("authorization") !== `Bearer ${import.meta.env.CRON_SECRET}`) {
+  if (request.headers.get("authorization") !== `Bearer ${env("CRON_SECRET")}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 

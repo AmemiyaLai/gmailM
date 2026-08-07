@@ -12,6 +12,7 @@ import { normalizeSenderAddress } from "./senderAddress";
 import { registerFirstSender } from "./firstSender";
 import { refreshSenderTags } from "./senderTagService";
 import { evaluateAndStoreTrust } from "./senderTrustService";
+import { env } from "./env";
 
 export interface SyncResult {
   imported: number;
@@ -131,7 +132,7 @@ export async function reconcileUnreadInbox(
   recoveryHistoryId?: string,
 ): Promise<ReconcileResult> {
   const supabase = getSupabase();
-  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  const watchAddress = env("GMAIL_WATCH_ADDRESS");
   let effectiveRecoveryHistoryId = recoveryHistoryId;
   if (!effectiveRecoveryHistoryId && watchAddress) {
     const { data } = await supabase

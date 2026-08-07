@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import { env } from "./env";
 
 let client: ReturnType<typeof createClient> | null = null;
 
-function isValidUrl(url: string | undefined): boolean {
+function isValidUrl(url: string | undefined): url is string {
   if (!url || url.includes("your-project.supabase.co")) return false;
   try {
     new URL(url);
@@ -60,8 +61,8 @@ export function unwrapQuery<T>(
 
 export function getSupabase() {
   if (!client) {
-    const url = import.meta.env.SUPABASE_URL;
-    const key = import.meta.env.SUPABASE_SERVICE_ROLE_KEY;
+    const url = env("SUPABASE_URL");
+    const key = env("SUPABASE_SERVICE_ROLE_KEY");
     if (!isValidUrl(url) || !key || key.includes("your_service_role_key")) {
       console.warn("Supabase 未配置或使用預設佔位符，開發預覽啟用虛擬數據防禦。");
       // 回傳 Mock Supabase Client 物件避免 SSR 致命崩潰

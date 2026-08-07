@@ -1,10 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
+import { env } from "./env";
 
 let client: GoogleGenAI | null = null;
 
 function getClient(): GoogleGenAI {
   if (!client) {
-    const apiKey = import.meta.env.GEMINI_API_KEY;
+    const apiKey = env("GEMINI_API_KEY");
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
@@ -13,7 +14,7 @@ function getClient(): GoogleGenAI {
   return client;
 }
 
-const MODEL = import.meta.env.GEMINI_MODEL || "gemini-3.5-flash";
+const MODEL = env("GEMINI_MODEL") || "gemini-3.5-flash";
 
 export interface UnreadEmailInput {
   sender: string;

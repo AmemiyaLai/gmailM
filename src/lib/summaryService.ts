@@ -1,6 +1,7 @@
 import { getSupabase } from "./supabase";
 import { summarizeUnreadEmails } from "./gemini";
 import { sendDiscordSummary } from "./discord";
+import { env } from "./env";
 
 interface UnreadEmailRow {
   sender: string;
@@ -133,7 +134,7 @@ const SUMMARY_COLUMNS = "id, summary_text, email_count, period_start, period_end
  * 與排程流程不同，這裡的失敗必須讓使用者看到，因此一律拋出例外。
  */
 export async function sendSummaryToDiscord(summaryId?: string): Promise<GeneratedSummary> {
-  if (!import.meta.env.DISCORD_WEBHOOK_URL) {
+  if (!env("DISCORD_WEBHOOK_URL")) {
     throw new SummaryError("DISCORD_WEBHOOK_URL is not configured", "db");
   }
 

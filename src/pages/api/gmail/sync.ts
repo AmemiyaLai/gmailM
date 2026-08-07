@@ -10,6 +10,7 @@ import {
   releaseGmailSyncLease,
 } from "../../../lib/gmailSyncControl";
 import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
+import { env } from "../../../lib/env";
 
 const RECONCILE_BATCH_SIZE = 20;
 
@@ -18,7 +19,7 @@ export const POST: APIRoute = async () => {
   // while Gmail automation is paused. This also keeps a missing migration from causing 500s.
   if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
 
-  const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
+  const watchAddress = env("GMAIL_WATCH_ADDRESS");
   const supabase = getSupabase();
   const admission = watchAddress
     ? await acquireGmailSyncLease(supabase, watchAddress)

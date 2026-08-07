@@ -1,5 +1,6 @@
 import type { ReputationVerdict } from "./senderTrust";
 import { normalizeDomain } from "./trustedDomains";
+import { env } from "./env";
 
 /**
  * Google Safe Browsing Lookup API v4 網域信譽查詢。
@@ -128,7 +129,7 @@ export async function lookupDomains(domains: string[]): Promise<Map<string, Safe
   const unique = [...new Set(domains.map((d) => normalizeDomain(d)).filter((d): d is string => !!d))];
   if (unique.length === 0) return new Map();
 
-  const apiKey = import.meta.env.SAFE_BROWSING_API_KEY;
+  const apiKey = env("SAFE_BROWSING_API_KEY");
   if (!apiKey) {
     return fallback(unique, "unknown", "SAFE_BROWSING_API_KEY 未設定，略過外部信譽查詢");
   }

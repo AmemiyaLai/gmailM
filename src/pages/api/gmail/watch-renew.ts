@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { startWatch } from "../../../lib/gmail";
 import { gmailAutomationPausedResponse, isGmailAutomationEnabled } from "../../../lib/gmailAutomation";
+import { env } from "../../../lib/env";
 
 interface SyncStateRow {
   watch_address: string;
@@ -10,7 +11,7 @@ interface SyncStateRow {
 
 export const GET: APIRoute = async ({ request }) => {
   const authHeader = request.headers.get("authorization");
-  const cronSecret = import.meta.env.CRON_SECRET;
+  const cronSecret = env("CRON_SECRET");
 
   if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });
@@ -18,10 +19,14 @@ export const GET: APIRoute = async ({ request }) => {
   if (!isGmailAutomationEnabled()) return gmailAutomationPausedResponse();
 
   try {
+    const watchAddress = env("GMAIL_WATCH_ADDRESS");
+    if (!watchAddress) {
+      console.warn("watch_renew_skipped: GMAIL_WATCH_ADDRESS 未設定");
+      return new Response("Missing GMAIL_WATCH_ADDRESS", { status: 500 });
+    }
+
     const { historyId, expiration } = await startWatch();
     const supabase = getSupabase();
-
-    const watchAddress = import.meta.env.GMAIL_WATCH_ADDRESS;
 
     const { data: existing } = await supabase
       .from("gmail_sync_state" as never)

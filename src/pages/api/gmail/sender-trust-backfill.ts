@@ -1,12 +1,13 @@
 import type { APIRoute } from "astro";
 import { getSupabase } from "../../../lib/supabase";
 import { backfillSenderTrust } from "../../../lib/senderTrustService";
+import { env } from "../../../lib/env";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 export const GET: APIRoute = async ({ request, url }) => {
-  if (request.headers.get("authorization") !== `Bearer ${import.meta.env.CRON_SECRET}`) {
+  if (request.headers.get("authorization") !== `Bearer ${env("CRON_SECRET")}`) {
     return new Response("Unauthorized", { status: 401 });
   }
 

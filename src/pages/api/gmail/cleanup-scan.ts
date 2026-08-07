@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { dispatchCleanupReview, resumeStuckReviews } from "../../../lib/cleanupReview";
+import { env } from "../../../lib/env";
 
 /**
  * 關鍵字清理定時掃描。
@@ -18,7 +19,7 @@ import { dispatchCleanupReview, resumeStuckReviews } from "../../../lib/cleanupR
  */
 export const GET: APIRoute = async ({ request }) => {
   const authHeader = request.headers.get("authorization");
-  const cronSecret = import.meta.env.CRON_SECRET;
+  const cronSecret = env("CRON_SECRET");
 
   if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
     return new Response("Unauthorized", { status: 401 });
